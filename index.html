@@ -796,7 +796,25 @@
                         prices.mexc[coin] = {...mexc, timestamp: Date.now()};
                         console.log(`✅ Loaded MEXC ${coin} via REST: bid=${mexc.bid}, ask=${mexc.ask}`);
                     } else {
-                        console.log(`❌ Failed to load MEXC ${coin} via REST`);
+                        console.log(`❌ Failed to load MEXC ${coin} via REST - trying alternative endpoint...`);
+                        // Пробуем альтернативный endpoint
+                        try {
+                            const altResponse = await fetch(`https://www.mexc.com/open/api/v2/market/ticker?symbol=${coin}`);
+                            if (altResponse.ok) {
+                                const altData = await altResponse.json();
+                                console.log(`MEXC v2 response for ${coin}:`, altData);
+                                if (altData.data && altData.data.bid && altData.data.ask) {
+                                    const mexcData = {
+                                        bid: parseFloat(altData.data.bid),
+                                        ask: parseFloat(altData.data.ask)
+                                    };
+                                    prices.mexc[coin] = {...mexcData, timestamp: Date.now()};
+                                    console.log(`✅ Loaded MEXC ${coin} via v2 API: bid=${mexcData.bid}, ask=${mexcData.ask}`);
+                                }
+                            }
+                        } catch (altErr) {
+                            console.error(`MEXC v2 also failed for ${coin}:`, altErr);
+                        }
                     }
                 } catch (error) {
                     console.error(`❌ Error loading initial data for ${coin}:`, error);
