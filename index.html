@@ -842,8 +842,37 @@
             return coin.replace('USDT', '/USDT');
         }
         
+        // Throttling для updateArbitrageData - обновляем максимум раз в 500мс
+        let updateTimeout = null;
+        let lastUpdateTime = 0;
+        const UPDATE_THROTTLE_MS = 500;
+        
         // Обновление данных арбитража (вызывается при получении новых данных через WebSocket)
         function updateArbitrageData() {
+            const now = Date.now();
+            
+            // Если прошло меньше UPDATE_THROTTLE_MS, откладываем обновление
+            if (now - lastUpdateTime < UPDATE_THROTTLE_MS) {
+                if (updateTimeout) {
+                    clearTimeout(updateTimeout);
+                }
+                updateTimeout = setTimeout(() => {
+                    lastUpdateTime = Date.now();
+                    performUpdate();
+                }, UPDATE_THROTTLE_MS - (now - lastUpdateTime));
+                return;
+            }
+            
+            // Обновляем сразу
+            lastUpdateTime = now;
+            if (updateTimeout) {
+                clearTimeout(updateTimeout);
+                updateTimeout = null;
+            }
+            performUpdate();
+        }
+        
+        function performUpdate() {
             const results = [];
             const exchangeNames = ['binance', 'okx', 'bybit', 'kucoin', 'mexc', 'bitget', 'huobi', 'bitfinex', 'bingx', 'coinbase'];
             
