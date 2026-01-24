@@ -438,82 +438,270 @@
         }
         
         // Инициализация WebSocket для всех остальных бирж
-        // OKX, KuCoin, Bitget, Huobi, Bitfinex, BingX, Coinbase
         function initAllOtherWebSockets() {
             // OKX WebSocket
-            try {
-                wsConnections.okx = new WebSocket('wss://ws.okx.com:8443/ws/v5/public');
-                wsConnections.okx.onopen = () => {
-                    connectionStatus.okx = true;
-                    updateStatusBar();
-                    wsConnections.okx.send(JSON.stringify({
-                        op: 'subscribe',
-                        args: COINS.map(coin => ({ channel: 'tickers', instId: coin }))
-                    }));
-                };
-                wsConnections.okx.onmessage = (e) => {
-                    try {
-                        const data = JSON.parse(e.data);
-                        if (data.data && data.data.length > 0) {
-                            const ticker = data.data[0];
-                            if (COINS.includes(ticker.instId)) {
-                                prices.okx[ticker.instId] = {
-                                    bid: parseFloat(ticker.bidPx),
-                                    ask: parseFloat(ticker.askPx),
-                                    timestamp: Date.now()
-                                };
-                                updateArbitrageData();
+            if (!wsConnections.okx || wsConnections.okx.readyState !== WebSocket.OPEN) {
+                try {
+                    wsConnections.okx = new WebSocket('wss://ws.okx.com:8443/ws/v5/public');
+                    wsConnections.okx.onopen = () => {
+                        console.log('✅ OKX WebSocket connected');
+                        connectionStatus.okx = true;
+                        updateStatusBar();
+                        wsConnections.okx.send(JSON.stringify({
+                            op: 'subscribe',
+                            args: COINS.map(coin => `tickers:${coin}`)
+                        }));
+                    };
+                    wsConnections.okx.onmessage = (e) => {
+                        try {
+                            const data = JSON.parse(e.data);
+                            if (data.data && data.data.length > 0) {
+                                const ticker = data.data[0];
+                                if (COINS.includes(ticker.instId)) {
+                                    prices.okx[ticker.instId] = {
+                                        bid: parseFloat(ticker.bidPx),
+                                        ask: parseFloat(ticker.askPx),
+                                        timestamp: Date.now()
+                                    };
+                                    updateArbitrageData();
+                                }
                             }
-                        }
-                    } catch (err) {}
-                };
-                wsConnections.okx.onerror = () => { connectionStatus.okx = false; updateStatusBar(); };
-                wsConnections.okx.onclose = () => { connectionStatus.okx = false; updateStatusBar(); setTimeout(() => initAllOtherWebSockets(), 5000); };
-            } catch (err) { connectionStatus.okx = false; }
+                        } catch (err) {}
+                    };
+                    wsConnections.okx.onerror = () => { connectionStatus.okx = false; updateStatusBar(); };
+                    wsConnections.okx.onclose = () => { connectionStatus.okx = false; updateStatusBar(); setTimeout(() => initAllOtherWebSockets(), 5000); };
+                } catch (err) { connectionStatus.okx = false; updateStatusBar(); }
+            }
             
             // KuCoin WebSocket
-            try {
-                fetch('https://api.kucoin.com/api/v1/bullet-public', { method: 'POST' })
-                    .then(r => r.json())
-                    .then(d => {
-                        if (d.data && d.data.token) {
-                            wsConnections.kucoin = new WebSocket(`${d.data.instanceServers[0].endpoint}?token=${d.data.token}&connectId=${Date.now()}`);
-                            wsConnections.kucoin.onopen = () => {
-                                connectionStatus.kucoin = true;
-                                updateStatusBar();
-                                COINS.forEach(coin => {
-                                    wsConnections.kucoin.send(JSON.stringify({
-                                        id: Date.now(),
-                                        type: 'subscribe',
-                                        topic: `/market/ticker:${coin}`,
-                                        privateChannel: false
-                                    }));
-                                });
-                            };
-                            wsConnections.kucoin.onmessage = (e) => {
-                                try {
-                                    const data = JSON.parse(e.data);
-                                    if (data.data && data.data.bestBid && data.data.bestAsk) {
-                                        const symbol = data.topic.split(':')[1];
-                                        if (COINS.includes(symbol)) {
-                                            prices.kucoin[symbol] = {
-                                                bid: parseFloat(data.data.bestBid),
-                                                ask: parseFloat(data.data.bestAsk),
-                                                timestamp: Date.now()
-                                            };
-                                            updateArbitrageData();
+            if (!wsConnections.kucoin || wsConnections.kucoin.readyState !== WebSocket.OPEN) {
+                try {
+                    fetch('https://api.kucoin.com/api/v1/bullet-public', { method: 'POST' })
+                        .then(r => r.json())
+                        .then(d => {
+                            if (d.data && d.data.token) {
+                                wsConnections.kucoin = new WebSocket(`${d.data.instanceServers[0].endpoint}?token=${d.data.token}&connectId=${Date.now()}`);
+                                wsConnections.kucoin.onopen = () => {
+                                    console.log('✅ KuCoin WebSocket connected');
+                                    connectionStatus.kucoin = true;
+                                    updateStatusBar();
+                                    COINS.forEach(coin => {
+                                        wsConnections.kucoin.send(JSON.stringify({
+                                            id: Date.now(),
+                                            type: 'subscribe',
+                                            topic: `/market/ticker:${coin}`,
+                                            privateChannel: false
+                                        }));
+                                    });
+                                };
+                                wsConnections.kucoin.onmessage = (e) => {
+                                    try {
+                                        const data = JSON.parse(e.data);
+                                        if (data.data && data.data.bestBid && data.data.bestAsk) {
+                                            const symbol = data.topic.split(':')[1];
+                                            if (COINS.includes(symbol)) {
+                                                prices.kucoin[symbol] = {
+                                                    bid: parseFloat(data.data.bestBid),
+                                                    ask: parseFloat(data.data.bestAsk),
+                                                    timestamp: Date.now()
+                                                };
+                                                updateArbitrageData();
+                                            }
                                         }
-                                    }
-                                } catch (err) {}
-                            };
-                            wsConnections.kucoin.onerror = () => { connectionStatus.kucoin = false; updateStatusBar(); };
-                            wsConnections.kucoin.onclose = () => { connectionStatus.kucoin = false; updateStatusBar(); };
-                        }
-                    });
-            } catch (err) { connectionStatus.kucoin = false; }
+                                    } catch (err) {}
+                                };
+                                wsConnections.kucoin.onerror = () => { connectionStatus.kucoin = false; updateStatusBar(); };
+                                wsConnections.kucoin.onclose = () => { connectionStatus.kucoin = false; updateStatusBar(); setTimeout(() => initAllOtherWebSockets(), 5000); };
+                            }
+                        })
+                        .catch(() => { connectionStatus.kucoin = false; updateStatusBar(); });
+                } catch (err) { connectionStatus.kucoin = false; updateStatusBar(); }
+            }
             
-            // Остальные биржи (Bitget, Huobi, Bitfinex, BingX, Coinbase) - упрощенная реализация
-            // Можно добавить позже при необходимости
+            // Bitget WebSocket
+            if (!wsConnections.bitget || wsConnections.bitget.readyState !== WebSocket.OPEN) {
+                try {
+                    wsConnections.bitget = new WebSocket('wss://ws.bitget.com/spot/v1/stream');
+                    wsConnections.bitget.onopen = () => {
+                        console.log('✅ Bitget WebSocket connected');
+                        connectionStatus.bitget = true;
+                        updateStatusBar();
+                        COINS.forEach(coin => {
+                            wsConnections.bitget.send(JSON.stringify({
+                                op: 'subscribe',
+                                args: [`spot/ticker:${coin}`]
+                            }));
+                        });
+                    };
+                    wsConnections.bitget.onmessage = (e) => {
+                        try {
+                            const data = JSON.parse(e.data);
+                            if (data.data && data.data.bestBid && data.data.bestAsk) {
+                                const symbol = data.arg?.replace('spot/ticker:', '');
+                                if (symbol && COINS.includes(symbol)) {
+                                    prices.bitget[symbol] = {
+                                        bid: parseFloat(data.data.bestBid),
+                                        ask: parseFloat(data.data.bestAsk),
+                                        timestamp: Date.now()
+                                    };
+                                    updateArbitrageData();
+                                }
+                            }
+                        } catch (err) {}
+                    };
+                    wsConnections.bitget.onerror = () => { connectionStatus.bitget = false; updateStatusBar(); };
+                    wsConnections.bitget.onclose = () => { connectionStatus.bitget = false; updateStatusBar(); setTimeout(() => initAllOtherWebSockets(), 5000); };
+                } catch (err) { connectionStatus.bitget = false; updateStatusBar(); }
+            }
+            
+            // Huobi WebSocket
+            if (!wsConnections.huobi || wsConnections.huobi.readyState !== WebSocket.OPEN) {
+                try {
+                    wsConnections.huobi = new WebSocket('wss://api.huobi.pro/ws');
+                    wsConnections.huobi.onopen = () => {
+                        console.log('✅ Huobi WebSocket connected');
+                        connectionStatus.huobi = true;
+                        updateStatusBar();
+                        COINS.forEach(coin => {
+                            wsConnections.huobi.send(JSON.stringify({
+                                sub: `market.${coin.toLowerCase()}.ticker`,
+                                id: Date.now().toString()
+                            }));
+                        });
+                    };
+                    wsConnections.huobi.onmessage = (e) => {
+                        try {
+                            const data = JSON.parse(e.data);
+                            if (data.tick && data.tick.bid && data.tick.ask) {
+                                const symbol = data.ch?.replace('market.', '').replace('.ticker', '').toUpperCase();
+                                if (symbol && COINS.includes(symbol)) {
+                                    prices.huobi[symbol] = {
+                                        bid: parseFloat(data.tick.bid[0]),
+                                        ask: parseFloat(data.tick.ask[0]),
+                                        timestamp: Date.now()
+                                    };
+                                    updateArbitrageData();
+                                }
+                            }
+                        } catch (err) {}
+                    };
+                    wsConnections.huobi.onerror = () => { connectionStatus.huobi = false; updateStatusBar(); };
+                    wsConnections.huobi.onclose = () => { connectionStatus.huobi = false; updateStatusBar(); setTimeout(() => initAllOtherWebSockets(), 5000); };
+                } catch (err) { connectionStatus.huobi = false; updateStatusBar(); }
+            }
+            
+            // Bitfinex WebSocket
+            if (!wsConnections.bitfinex || wsConnections.bitfinex.readyState !== WebSocket.OPEN) {
+                try {
+                    wsConnections.bitfinex = new WebSocket('wss://api-pub.bitfinex.com/ws/2');
+                    wsConnections.bitfinex.onopen = () => {
+                        console.log('✅ Bitfinex WebSocket connected');
+                        connectionStatus.bitfinex = true;
+                        updateStatusBar();
+                        COINS.forEach(coin => {
+                            wsConnections.bitfinex.send(JSON.stringify({
+                                event: 'subscribe',
+                                channel: 'ticker',
+                                symbol: `t${coin}`
+                            }));
+                        });
+                    };
+                    wsConnections.bitfinex.onmessage = (e) => {
+                        try {
+                            const data = JSON.parse(e.data);
+                            if (Array.isArray(data) && data.length >= 2 && Array.isArray(data[1])) {
+                                const ticker = data[1];
+                                if (ticker.length >= 10) {
+                                    // Bitfinex ticker format: [BID, BID_SIZE, ASK, ASK_SIZE, ...]
+                                    const symbol = data[0]?.toString().replace('t', '');
+                                    if (symbol && COINS.includes(symbol)) {
+                                        prices.bitfinex[symbol] = {
+                                            bid: parseFloat(ticker[0]),
+                                            ask: parseFloat(ticker[2]),
+                                            timestamp: Date.now()
+                                        };
+                                        updateArbitrageData();
+                                    }
+                                }
+                            }
+                        } catch (err) {}
+                    };
+                    wsConnections.bitfinex.onerror = () => { connectionStatus.bitfinex = false; updateStatusBar(); };
+                    wsConnections.bitfinex.onclose = () => { connectionStatus.bitfinex = false; updateStatusBar(); setTimeout(() => initAllOtherWebSockets(), 5000); };
+                } catch (err) { connectionStatus.bitfinex = false; updateStatusBar(); }
+            }
+            
+            // BingX WebSocket
+            if (!wsConnections.bingx || wsConnections.bingx.readyState !== WebSocket.OPEN) {
+                try {
+                    wsConnections.bingx = new WebSocket('wss://open-api-ws.bingx.com/market');
+                    wsConnections.bingx.onopen = () => {
+                        console.log('✅ BingX WebSocket connected');
+                        connectionStatus.bingx = true;
+                        updateStatusBar();
+                        COINS.forEach(coin => {
+                            wsConnections.bingx.send(JSON.stringify({
+                                id: Date.now(),
+                                method: 'sub.ticker',
+                                params: { symbol: coin }
+                            }));
+                        });
+                    };
+                    wsConnections.bingx.onmessage = (e) => {
+                        try {
+                            const data = JSON.parse(e.data);
+                            if (data.data && data.data.bidPrice && data.data.askPrice) {
+                                const symbol = data.data.symbol;
+                                if (symbol && COINS.includes(symbol)) {
+                                    prices.bingx[symbol] = {
+                                        bid: parseFloat(data.data.bidPrice),
+                                        ask: parseFloat(data.data.askPrice),
+                                        timestamp: Date.now()
+                                    };
+                                    updateArbitrageData();
+                                }
+                            }
+                        } catch (err) {}
+                    };
+                    wsConnections.bingx.onerror = () => { connectionStatus.bingx = false; updateStatusBar(); };
+                    wsConnections.bingx.onclose = () => { connectionStatus.bingx = false; updateStatusBar(); setTimeout(() => initAllOtherWebSockets(), 5000); };
+                } catch (err) { connectionStatus.bingx = false; updateStatusBar(); }
+            }
+            
+            // Coinbase Pro WebSocket
+            if (!wsConnections.coinbase || wsConnections.coinbase.readyState !== WebSocket.OPEN) {
+                try {
+                    wsConnections.coinbase = new WebSocket('wss://ws-feed.exchange.coinbase.com');
+                    wsConnections.coinbase.onopen = () => {
+                        console.log('✅ Coinbase WebSocket connected');
+                        connectionStatus.coinbase = true;
+                        updateStatusBar();
+                        wsConnections.coinbase.send(JSON.stringify({
+                            type: 'subscribe',
+                            product_ids: COINS.map(coin => coin.replace('USDT', '-USDT')),
+                            channels: ['ticker']
+                        }));
+                    };
+                    wsConnections.coinbase.onmessage = (e) => {
+                        try {
+                            const data = JSON.parse(e.data);
+                            if (data.type === 'ticker' && data.product_id) {
+                                const symbol = data.product_id.replace('-', '');
+                                if (COINS.includes(symbol)) {
+                                    prices.coinbase[symbol] = {
+                                        bid: parseFloat(data.best_bid),
+                                        ask: parseFloat(data.best_ask),
+                                        timestamp: Date.now()
+                                    };
+                                    updateArbitrageData();
+                                }
+                            }
+                        } catch (err) {}
+                    };
+                    wsConnections.coinbase.onerror = () => { connectionStatus.coinbase = false; updateStatusBar(); };
+                    wsConnections.coinbase.onclose = () => { connectionStatus.coinbase = false; updateStatusBar(); setTimeout(() => initAllOtherWebSockets(), 5000); };
+                } catch (err) { connectionStatus.coinbase = false; updateStatusBar(); }
+            }
         }
         
         // Обновление статус-бара
