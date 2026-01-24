@@ -284,11 +284,14 @@
                     try {
                         const data = JSON.parse(event.data);
                         if (data.s && COINS.includes(data.s)) {
+                            const bid = parseFloat(data.b);
+                            const ask = parseFloat(data.a);
                             prices.binance[data.s] = {
-                                bid: parseFloat(data.b),
-                                ask: parseFloat(data.a),
+                                bid: bid,
+                                ask: ask,
                                 timestamp: Date.now()
                             };
+                            console.log(`✅ Binance ${data.s}: bid=${bid} ask=${ask}`);
                             updateArbitrageData();
                         }
                     } catch (error) {
@@ -343,11 +346,14 @@
                                 const bids = data.data.b;
                                 const asks = data.data.a;
                                 if (bids.length > 0 && asks.length > 0) {
+                                    const bid = parseFloat(bids[0][0]);
+                                    const ask = parseFloat(asks[0][0]);
                                     prices.bybit[symbol] = {
-                                        bid: parseFloat(bids[0][0]),
-                                        ask: parseFloat(asks[0][0]),
+                                        bid: bid,
+                                        ask: ask,
                                         timestamp: Date.now()
                                     };
+                                    console.log(`✅ Bybit ${symbol}: bid=${bid} ask=${ask}`);
                                     updateArbitrageData();
                                 }
                             }
@@ -411,6 +417,7 @@
                                         ask: ask,
                                         timestamp: Date.now()
                                     };
+                                    console.log(`✅ MEXC ${symbol}: bid=${bid} ask=${ask}`);
                                     updateArbitrageData();
                                 }
                             }
@@ -1021,8 +1028,20 @@
                         // Binance
                         fetch(`https://api.binance.com/api/v3/ticker/bookTicker?symbol=${coin}`)
                             .then(r => r.json())
-                            .then(d => ({ bid: parseFloat(d.bidPrice), ask: parseFloat(d.askPrice) }))
-                            .catch(() => null),
+                            .then(d => {
+                                if (d.bidPrice && d.askPrice) {
+                                    const bid = parseFloat(d.bidPrice);
+                                    const ask = parseFloat(d.askPrice);
+                                    if (!isNaN(bid) && !isNaN(ask) && bid > 0 && ask > 0) {
+                                        return { bid, ask };
+                                    }
+                                }
+                                return null;
+                            })
+                            .catch(err => {
+                                console.error(`Binance REST error for ${coin}:`, err);
+                                return null;
+                            }),
                         // OKX
                         fetch(`https://www.okx.com/api/v5/market/ticker?instId=${coin}`)
                             .then(r => r.json())
@@ -1037,32 +1056,66 @@
                         fetch(`https://api.bybit.com/v5/market/orderbook?category=spot&symbol=${coin}&limit=1`)
                             .then(r => r.json())
                             .then(d => {
-                                if (d.retCode === 0 && d.result && d.result.b && d.result.a) {
-                                    return { bid: parseFloat(d.result.b[0][0]), ask: parseFloat(d.result.a[0][0]) };
+                                if (d.retCode === 0 && d.result && d.result.b && d.result.a && 
+                                    d.result.b.length > 0 && d.result.a.length > 0) {
+                                    const bid = parseFloat(d.result.b[0][0]);
+                                    const ask = parseFloat(d.result.a[0][0]);
+                                    if (!isNaN(bid) && !isNaN(ask) && bid > 0 && ask > 0) {
+                                        return { bid, ask };
+                                    }
                                 }
                                 return null;
                             })
-                            .catch(() => null),
+                            .catch(err => {
+                                console.error(`Bybit REST error for ${coin}:`, err);
+                                return null;
+                            }),
                         // KuCoin
                         fetch(`https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=${coin}`)
-                            .then(r => r.json())
+                            .then(r => {
+                                if (!r.ok) {
+                                    console.error(`KuCoin REST error for ${coin}: HTTP ${r.status}`);
+                                    return null;
+                                }
+                                return r.json();
+                            })
                             .then(d => {
-                                if (d.data && d.data.bestBid && d.data.bestAsk) {
-                                    return { bid: parseFloat(d.data.bestBid), ask: parseFloat(d.data.bestAsk) };
+                                if (d && d.data && d.data.bestBid && d.data.bestAsk) {
+                                    const bid = parseFloat(d.data.bestBid);
+                                    const ask = parseFloat(d.data.bestAsk);
+                                    if (!isNaN(bid) && !isNaN(ask) && bid > 0 && ask > 0) {
+                                        return { bid, ask };
+                                    }
                                 }
                                 return null;
                             })
-                            .catch(() => null),
+                            .catch(err => {
+                                console.error(`KuCoin REST error for ${coin}:`, err);
+                                return null;
+                            }),
                         // MEXC
                         fetch(`https://api.mexc.com/api/v3/ticker/bookTicker?symbol=${coin}`)
-                            .then(r => r.ok ? r.json() : null)
+                            .then(r => {
+                                if (!r.ok) {
+                                    console.error(`MEXC REST error for ${coin}: HTTP ${r.status}`);
+                                    return null;
+                                }
+                                return r.json();
+                            })
                             .then(d => {
                                 if (d && d.bidPrice && d.askPrice) {
-                                    return { bid: parseFloat(d.bidPrice), ask: parseFloat(d.askPrice) };
+                                    const bid = parseFloat(d.bidPrice);
+                                    const ask = parseFloat(d.askPrice);
+                                    if (!isNaN(bid) && !isNaN(ask) && bid > 0 && ask > 0) {
+                                        return { bid, ask };
+                                    }
                                 }
                                 return null;
                             })
-                            .catch(() => null),
+                            .catch(err => {
+                                console.error(`MEXC REST error for ${coin}:`, err);
+                                return null;
+                            }),
                         // Bitget
                         fetch(`https://api.bitget.com/api/spot/v1/market/ticker?symbol=${coin}`)
                             .then(r => r.json())
@@ -1075,34 +1128,75 @@
                             .catch(() => null),
                         // Huobi
                         fetch(`https://api.huobi.pro/market/detail/merged?symbol=${coin.toLowerCase()}`)
-                            .then(r => r.json())
+                            .then(r => {
+                                if (!r.ok) {
+                                    console.error(`Huobi REST error for ${coin}: HTTP ${r.status}`);
+                                    return null;
+                                }
+                                return r.json();
+                            })
                             .then(d => {
-                                if (d.status === 'ok' && d.tick && d.tick.bid && d.tick.ask) {
-                                    return { bid: parseFloat(d.tick.bid[0]), ask: parseFloat(d.tick.ask[0]) };
+                                if (d && d.status === 'ok' && d.tick && d.tick.bid && d.tick.ask &&
+                                    Array.isArray(d.tick.bid) && Array.isArray(d.tick.ask) &&
+                                    d.tick.bid.length > 0 && d.tick.ask.length > 0) {
+                                    const bid = parseFloat(d.tick.bid[0]);
+                                    const ask = parseFloat(d.tick.ask[0]);
+                                    if (!isNaN(bid) && !isNaN(ask) && bid > 0 && ask > 0) {
+                                        return { bid, ask };
+                                    }
                                 }
                                 return null;
                             })
-                            .catch(() => null),
+                            .catch(err => {
+                                console.error(`Huobi REST error for ${coin}:`, err);
+                                return null;
+                            }),
                         // Bitfinex
                         fetch(`https://api-pub.bitfinex.com/v2/ticker/t${coin}`)
-                            .then(r => r.json())
+                            .then(r => {
+                                if (!r.ok) {
+                                    console.error(`Bitfinex REST error for ${coin}: HTTP ${r.status}`);
+                                    return null;
+                                }
+                                return r.json();
+                            })
                             .then(d => {
                                 if (Array.isArray(d) && d.length >= 3) {
-                                    return { bid: parseFloat(d[0]), ask: parseFloat(d[2]) };
+                                    const bid = parseFloat(d[0]);
+                                    const ask = parseFloat(d[2]);
+                                    if (!isNaN(bid) && !isNaN(ask) && bid > 0 && ask > 0) {
+                                        return { bid, ask };
+                                    }
                                 }
                                 return null;
                             })
-                            .catch(() => null),
+                            .catch(err => {
+                                console.error(`Bitfinex REST error for ${coin}:`, err);
+                                return null;
+                            }),
                         // BingX
                         fetch(`https://open-api.bingx.com/openApi/spot/v1/ticker/24hr?symbol=${coin}`)
-                            .then(r => r.json())
+                            .then(r => {
+                                if (!r.ok) {
+                                    console.error(`BingX REST error for ${coin}: HTTP ${r.status}`);
+                                    return null;
+                                }
+                                return r.json();
+                            })
                             .then(d => {
-                                if (d.code === 0 && d.data && d.data.bidPrice && d.data.askPrice) {
-                                    return { bid: parseFloat(d.data.bidPrice), ask: parseFloat(d.data.askPrice) };
+                                if (d && d.code === 0 && d.data && d.data.bidPrice && d.data.askPrice) {
+                                    const bid = parseFloat(d.data.bidPrice);
+                                    const ask = parseFloat(d.data.askPrice);
+                                    if (!isNaN(bid) && !isNaN(ask) && bid > 0 && ask > 0) {
+                                        return { bid, ask };
+                                    }
                                 }
                                 return null;
                             })
-                            .catch(() => null),
+                            .catch(err => {
+                                console.error(`BingX REST error for ${coin}:`, err);
+                                return null;
+                            }),
                         // Coinbase (использует формат BTC-USDT)
                         fetch(`https://api.exchange.coinbase.com/products/${coin.replace('USDT', '-USDT')}/ticker`)
                             .then(r => r.json())
@@ -1130,9 +1224,11 @@
                     ];
                     
                     exchangeData.forEach(({ name, data }) => {
-                        if (data) {
+                        if (data && data.bid && data.ask) {
                             prices[name][coin] = {...data, timestamp: Date.now()};
-                            console.log(`✅ Loaded ${name} ${coin} via REST`);
+                            console.log(`✅ REST ${name} ${coin}: bid=${data.bid} ask=${data.ask}`);
+                        } else if (data) {
+                            console.warn(`⚠️ REST ${name} ${coin}: неполные данные`, data);
                         }
                     });
                     
