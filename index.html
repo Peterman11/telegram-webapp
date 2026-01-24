@@ -701,7 +701,9 @@
                     }
                     if (mexc) {
                         prices.mexc[coin] = {...mexc, timestamp: Date.now()};
-                        console.log(`✅ Loaded MEXC ${coin} via REST`);
+                        console.log(`✅ Loaded MEXC ${coin} via REST: bid=${mexc.bid}, ask=${mexc.ask}`);
+                    } else {
+                        console.log(`❌ Failed to load MEXC ${coin} via REST`);
                     }
                 } catch (error) {
                     console.error(`❌ Error loading initial data for ${coin}:`, error);
