@@ -532,10 +532,27 @@
             
             if (results.length === 0) {
                 const connected = Object.values(connectionStatus).filter(s => s).length;
+                const totalPrices = Object.keys(prices.binance).length + 
+                                   Object.keys(prices.bybit).length + 
+                                   Object.keys(prices.mexc).length;
+                
                 if (connected === 0) {
                     contentDiv.innerHTML = '<div class="error">Ожидание подключения к биржам...</div>';
+                } else if (totalPrices === 0) {
+                    contentDiv.innerHTML = '<div class="loading">Ожидание данных с бирж... (данные приходят в реальном времени через WebSocket)</div>';
                 } else {
-                    contentDiv.innerHTML = '<div class="loading">Ожидание данных с бирж...</div>';
+                    // Есть данные, но недостаточно для расчета арбитража (нужно минимум 2 биржи для каждой монеты)
+                    let missingInfo = [];
+                    for (const coin of COINS) {
+                        const hasBinance = !!prices.binance[coin];
+                        const hasBybit = !!prices.bybit[coin];
+                        const hasMexc = !!prices.mexc[coin];
+                        const count = (hasBinance ? 1 : 0) + (hasBybit ? 1 : 0) + (hasMexc ? 1 : 0);
+                        if (count < 2) {
+                            missingInfo.push(`${coin}: ${count}/3 бирж`);
+                        }
+                    }
+                    contentDiv.innerHTML = `<div class="loading">Собираем данные...<br><small>${missingInfo.join(', ')}</small></div>`;
                 }
                 return;
             }
