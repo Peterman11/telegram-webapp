@@ -726,109 +726,140 @@
             }, 1000);
         };
         
-        // Функция для начальной загрузки данных через REST API
+        // Функция для начальной загрузки данных через REST API для ВСЕХ бирж и ВСЕХ монет
         async function loadInitialData() {
-            console.log('Loading initial data via REST API...');
-            contentDiv.innerHTML = '<div class="loading">Загрузка начальных данных...</div>';
+            console.log('Loading initial data via REST API for ALL exchanges and ALL coins...');
+            contentDiv.innerHTML = '<div class="loading">Загрузка начальных данных со всех бирж...</div>';
             
+            // Загружаем данные для каждой монеты со всех бирж
             for (const coin of COINS) {
                 try {
-                    const [binance, bybit, mexc] = await Promise.all([
-                        // Binance REST API для СПОТОВОЙ торговли (/api/v3/ - только спот)
+                    // Загружаем данные параллельно со всех бирж
+                    const [binance, okx, bybit, kucoin, mexc, bitget, huobi, bitfinex, bingx, coinbase] = await Promise.all([
+                        // Binance
                         fetch(`https://api.binance.com/api/v3/ticker/bookTicker?symbol=${coin}`)
                             .then(r => r.json())
-                            .then(d => ({
-                                bid: parseFloat(d.bidPrice),
-                                ask: parseFloat(d.askPrice)
-                            }))
+                            .then(d => ({ bid: parseFloat(d.bidPrice), ask: parseFloat(d.askPrice) }))
                             .catch(() => null),
-                        // Bybit REST API для СПОТОВОЙ торговли (category=spot - явно спот)
+                        // OKX
+                        fetch(`https://www.okx.com/api/v5/market/ticker?instId=${coin}`)
+                            .then(r => r.json())
+                            .then(d => {
+                                if (d.code === '0' && d.data && d.data[0]) {
+                                    return { bid: parseFloat(d.data[0].bidPx), ask: parseFloat(d.data[0].askPx) };
+                                }
+                                return null;
+                            })
+                            .catch(() => null),
+                        // Bybit
                         fetch(`https://api.bybit.com/v5/market/orderbook?category=spot&symbol=${coin}&limit=1`)
                             .then(r => r.json())
                             .then(d => {
                                 if (d.retCode === 0 && d.result && d.result.b && d.result.a) {
-                                    return {
-                                        bid: parseFloat(d.result.b[0][0]),
-                                        ask: parseFloat(d.result.a[0][0])
-                                    };
+                                    return { bid: parseFloat(d.result.b[0][0]), ask: parseFloat(d.result.a[0][0]) };
                                 }
                                 return null;
                             })
                             .catch(() => null),
-                        // MEXC REST API для СПОТОВОЙ торговли (/api/v3/ - только спот)
-                        // https://mxcdevelop.github.io/apidocs/spot_v3_en/#24hr-ticker-price-change-statistics
-                        fetch(`https://api.mexc.com/api/v3/ticker/bookTicker?symbol=${coin}`)
-                            .then(r => {
-                                if (!r.ok) {
-                                    console.error(`MEXC REST API error for ${coin}: HTTP ${r.status}`);
-                                    return null;
-                                }
-                                return r.json();
-                            })
+                        // KuCoin
+                        fetch(`https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=${coin}`)
+                            .then(r => r.json())
                             .then(d => {
-                                if (!d) return null;
-                                
-                                // MEXC официальный формат ответа: {bidPrice: "...", askPrice: "..."}
-                                if (d.bidPrice && d.askPrice) {
-                                    const bid = parseFloat(d.bidPrice);
-                                    const ask = parseFloat(d.askPrice);
-                                    
-                                    if (!isNaN(bid) && !isNaN(ask) && bid > 0 && ask > 0) {
-                                        console.log(`✅ MEXC REST ${coin}: bid=${bid}, ask=${ask}`);
-                                        return { bid, ask };
-                                    } else {
-                                        console.error(`MEXC REST: invalid prices for ${coin}: bid=${bid}, ask=${ask}`);
-                                        return null;
-                                    }
-                                } else {
-                                    console.error(`MEXC REST: missing bidPrice/askPrice for ${coin}:`, d);
-                                    return null;
+                                if (d.data && d.data.bestBid && d.data.bestAsk) {
+                                    return { bid: parseFloat(d.data.bestBid), ask: parseFloat(d.data.bestAsk) };
                                 }
-                            })
-                            .catch(err => {
-                                console.error(`MEXC REST API error for ${coin}:`, err);
                                 return null;
                             })
+                            .catch(() => null),
+                        // MEXC
+                        fetch(`https://api.mexc.com/api/v3/ticker/bookTicker?symbol=${coin}`)
+                            .then(r => r.ok ? r.json() : null)
+                            .then(d => {
+                                if (d && d.bidPrice && d.askPrice) {
+                                    return { bid: parseFloat(d.bidPrice), ask: parseFloat(d.askPrice) };
+                                }
+                                return null;
+                            })
+                            .catch(() => null),
+                        // Bitget
+                        fetch(`https://api.bitget.com/api/spot/v1/market/ticker?symbol=${coin}`)
+                            .then(r => r.json())
+                            .then(d => {
+                                if (d.code === '00000' && d.data && d.data.bestBid && d.data.bestAsk) {
+                                    return { bid: parseFloat(d.data.bestBid), ask: parseFloat(d.data.bestAsk) };
+                                }
+                                return null;
+                            })
+                            .catch(() => null),
+                        // Huobi
+                        fetch(`https://api.huobi.pro/market/detail/merged?symbol=${coin.toLowerCase()}`)
+                            .then(r => r.json())
+                            .then(d => {
+                                if (d.status === 'ok' && d.tick && d.tick.bid && d.tick.ask) {
+                                    return { bid: parseFloat(d.tick.bid[0]), ask: parseFloat(d.tick.ask[0]) };
+                                }
+                                return null;
+                            })
+                            .catch(() => null),
+                        // Bitfinex
+                        fetch(`https://api-pub.bitfinex.com/v2/ticker/t${coin}`)
+                            .then(r => r.json())
+                            .then(d => {
+                                if (Array.isArray(d) && d.length >= 3) {
+                                    return { bid: parseFloat(d[0]), ask: parseFloat(d[2]) };
+                                }
+                                return null;
+                            })
+                            .catch(() => null),
+                        // BingX
+                        fetch(`https://open-api.bingx.com/openApi/spot/v1/ticker/24hr?symbol=${coin}`)
+                            .then(r => r.json())
+                            .then(d => {
+                                if (d.code === 0 && d.data && d.data.bidPrice && d.data.askPrice) {
+                                    return { bid: parseFloat(d.data.bidPrice), ask: parseFloat(d.data.askPrice) };
+                                }
+                                return null;
+                            })
+                            .catch(() => null),
+                        // Coinbase (использует формат BTC-USDT)
+                        fetch(`https://api.exchange.coinbase.com/products/${coin.replace('USDT', '-USDT')}/ticker`)
+                            .then(r => r.json())
+                            .then(d => {
+                                if (d.bid && d.ask) {
+                                    return { bid: parseFloat(d.bid), ask: parseFloat(d.ask) };
+                                }
+                                return null;
+                            })
+                            .catch(() => null)
                     ]);
                     
-                    if (binance) {
-                        prices.binance[coin] = {...binance, timestamp: Date.now()};
-                        console.log(`✅ Loaded Binance ${coin} via REST`);
-                    }
-                    if (bybit) {
-                        prices.bybit[coin] = {...bybit, timestamp: Date.now()};
-                        console.log(`✅ Loaded Bybit ${coin} via REST`);
-                    }
-                    if (mexc) {
-                        prices.mexc[coin] = {...mexc, timestamp: Date.now()};
-                        console.log(`✅ Loaded MEXC ${coin} via REST: bid=${mexc.bid}, ask=${mexc.ask}`);
-                    } else {
-                        console.log(`❌ Failed to load MEXC ${coin} via REST - trying alternative endpoint...`);
-                        // Пробуем альтернативный endpoint
-                        try {
-                            const altResponse = await fetch(`https://www.mexc.com/open/api/v2/market/ticker?symbol=${coin}`);
-                            if (altResponse.ok) {
-                                const altData = await altResponse.json();
-                                console.log(`MEXC v2 response for ${coin}:`, altData);
-                                if (altData.data && altData.data.bid && altData.data.ask) {
-                                    const mexcData = {
-                                        bid: parseFloat(altData.data.bid),
-                                        ask: parseFloat(altData.data.ask)
-                                    };
-                                    prices.mexc[coin] = {...mexcData, timestamp: Date.now()};
-                                    console.log(`✅ Loaded MEXC ${coin} via v2 API: bid=${mexcData.bid}, ask=${mexcData.ask}`);
-                                }
-                            }
-                        } catch (altErr) {
-                            console.error(`MEXC v2 also failed for ${coin}:`, altErr);
+                    // Сохраняем данные для каждой биржи
+                    const exchangeData = [
+                        { name: 'binance', data: binance },
+                        { name: 'okx', data: okx },
+                        { name: 'bybit', data: bybit },
+                        { name: 'kucoin', data: kucoin },
+                        { name: 'mexc', data: mexc },
+                        { name: 'bitget', data: bitget },
+                        { name: 'huobi', data: huobi },
+                        { name: 'bitfinex', data: bitfinex },
+                        { name: 'bingx', data: bingx },
+                        { name: 'coinbase', data: coinbase }
+                    ];
+                    
+                    exchangeData.forEach(({ name, data }) => {
+                        if (data) {
+                            prices[name][coin] = {...data, timestamp: Date.now()};
+                            console.log(`✅ Loaded ${name} ${coin} via REST`);
                         }
-                    }
+                    });
+                    
                 } catch (error) {
                     console.error(`❌ Error loading initial data for ${coin}:`, error);
                 }
             }
             
-            console.log('Initial data loaded, updating arbitrage...');
+            console.log('Initial data loaded for all exchanges and all coins, updating arbitrage...');
             updateArbitrageData();
         }
         
