@@ -175,21 +175,13 @@
         // Объем для расчета (в USDT)
         const TRADE_AMOUNT = 100;
         
-        // Комиссии (0.1% = 0.001)
+        // Торговые комиссии (0.1% = 0.001)
         const BINANCE_TRADE_FEE = 0.001;
         const BYBIT_TRADE_FEE = 0.001;
-        // Комиссии вывода для каждой монеты
-        const WITHDRAW_FEES = {
-            'BTCUSDT': 0.0002,  // BTC
-            'ETHUSDT': 0.001,   // ETH
-            'BNBUSDT': 0.0001,  // BNB
-            'SOLUSDT': 0.01,    // SOL
-            'ADAUSDT': 1.0,     // ADA
-            'XRPUSDT': 0.25     // XRP
-        };
         
+        // Комиссия вывода убрана - используем только торговые комиссии
         function getWithdrawFee(coin) {
-            return WITHDRAW_FEES[coin] || 0.0001; // Дефолт для неизвестных монет
+            return 0.0; // Без комиссии вывода
         }
         
         async function fetchBinancePrice(symbol) {
