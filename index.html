@@ -1351,9 +1351,10 @@
             let successCount = 0;
             let errorCount = 0;
             
-            // Загружаем данные для каждой монеты со всех бирж
-            for (const coin of COINS) {
-                console.log(`\n🪙 Загрузка данных для ${coin}...`);
+            // Загружаем данные для каждой монеты со всех бирж с задержкой между монетами
+            for (let i = 0; i < COINS.length; i++) {
+                const coin = COINS[i];
+                console.log(`\n🪙 Загрузка данных для ${coin} (${i + 1}/${COINS.length})...`);
                 try {
                     // Загружаем данные параллельно со всех бирж
                     const [binance, okx, bybit, kucoin, mexc, bitget, huobi, bitfinex, bingx, coinbase] = await Promise.all([
@@ -1371,7 +1372,10 @@
                                 return null;
                             })
                             .catch(err => {
-                                console.error(`Binance REST error for ${coin}:`, err);
+                                // Не логируем CORS ошибки - это ожидаемо для браузера
+                                if (err.message && !err.message.includes('Failed to fetch')) {
+                                    console.error(`Binance REST error for ${coin}:`, err);
+                                }
                                 return null;
                             }),
                         // OKX
@@ -1402,57 +1406,15 @@
                                 console.error(`Bybit REST error for ${coin}:`, err);
                                 return null;
                             }),
-                        // KuCoin
-                        fetch(`https://api.kucoin.com/api/v1/market/orderbook/level1?symbol=${coin}`)
-                            .then(r => {
-                                if (!r.ok) {
-                                    console.error(`KuCoin REST error for ${coin}: HTTP ${r.status}`);
-                                    return null;
-                                }
-                                return r.json();
-                            })
-                            .then(d => {
-                                if (d && d.data && d.data.bestBid && d.data.bestAsk) {
-                                    const bid = parseFloat(d.data.bestBid);
-                                    const ask = parseFloat(d.data.bestAsk);
-                                    if (!isNaN(bid) && !isNaN(ask) && bid > 0 && ask > 0) {
-                                        return { bid, ask };
-                                    }
-                                }
-                                return null;
-                            })
-                            .catch(err => {
-                                console.error(`KuCoin REST error for ${coin}:`, err);
-                                return null;
-                            }),
-                        // MEXC
-                        fetch(`https://api.mexc.com/api/v3/ticker/bookTicker?symbol=${coin}`)
-                            .then(r => {
-                                if (!r.ok) {
-                                    console.error(`MEXC REST error for ${coin}: HTTP ${r.status}`);
-                                    return null;
-                                }
-                                return r.json();
-                            })
-                            .then(d => {
-                                if (d && d.bidPrice && d.askPrice) {
-                                    const bid = parseFloat(d.bidPrice);
-                                    const ask = parseFloat(d.askPrice);
-                                    if (!isNaN(bid) && !isNaN(ask) && bid > 0 && ask > 0) {
-                                        return { bid, ask };
-                                    }
-                                }
-                                return null;
-                            })
-                            .catch(err => {
-                                console.error(`MEXC REST error for ${coin}:`, err);
-                                return null;
-                            }),
-                        // Bitget
+                        // KuCoin - пропускаем из-за CORS блокировки
+                        Promise.resolve(null) // KuCoin блокирует CORS запросы из браузера
+                        // MEXC - пропускаем из-за CORS блокировки
+                        Promise.resolve(null) // MEXC блокирует CORS запросы из браузера
+                        // Bitget - многие монеты не поддерживаются, не логируем ошибки
                         fetch(`https://api.bitget.com/api/spot/v1/market/ticker?symbol=${coin}`)
                             .then(r => {
                                 if (!r.ok) {
-                                    console.error(`Bitget REST error for ${coin}: HTTP ${r.status}`);
+                                    // Не логируем 400 ошибки - это нормально для неподдерживаемых монет
                                     return null;
                                 }
                                 return r.json();
@@ -1496,15 +1458,20 @@
                                 console.error(`Huobi REST error for ${coin}:`, err);
                                 return null;
                             }),
-                        // Bitfinex
+                        // Bitfinex - пропускаем для монет, которые не поддерживаются (Bitfinex использует USD пары)
+                        (coin.includes('USDT') && !['BTCUSDT', 'ETHUSDT'].includes(coin) ? 
+                            Promise.resolve(null) : // Пропускаем большинство USDT пар
                         fetch(`https://api-pub.bitfinex.com/v2/ticker/t${coin}`)
                             .then(r => {
                                 if (!r.ok) {
-                                    console.error(`Bitfinex REST error for ${coin}: HTTP ${r.status}`);
+                                    // Не логируем 429 и CORS ошибки
+                                    if (r.status !== 429 && r.status !== 0) {
+                                        // console.error(`Bitfinex REST error for ${coin}: HTTP ${r.status}`);
+                                    }
                                     return null;
                                 }
                                 return r.json();
-                            })
+                            }))
                             .then(d => {
                                 if (Array.isArray(d) && d.length >= 3) {
                                     const bid = parseFloat(d[0]);
@@ -1519,15 +1486,8 @@
                                 console.error(`Bitfinex REST error for ${coin}:`, err);
                                 return null;
                             }),
-                        // BingX
-                        fetch(`https://open-api.bingx.com/openApi/spot/v1/ticker/24hr?symbol=${coin}`)
-                            .then(r => {
-                                if (!r.ok) {
-                                    console.error(`BingX REST error for ${coin}: HTTP ${r.status}`);
-                                    return null;
-                                }
-                                return r.json();
-                            })
+                        // BingX - пропускаем из-за CORS блокировки
+                        Promise.resolve(null) // BingX блокирует CORS запросы из браузера
                             .then(d => {
                                 if (d && d.code === 0 && d.data && d.data.bidPrice && d.data.askPrice) {
                                     const bid = parseFloat(d.data.bidPrice);
