@@ -406,6 +406,7 @@
                 wsConnections.mexc.onmessage = (event) => {
                     try {
                         const data = JSON.parse(event.data);
+                        // Логируем все сообщения для отладки
                         if (data.c && data.d && data.d.b && data.d.a) {
                             const symbol = data.c.toUpperCase();
                             if (COINS.includes(symbol)) {
@@ -421,9 +422,12 @@
                                     updateArbitrageData();
                                 }
                             }
+                        } else {
+                            // Логируем необработанные сообщения
+                            console.log('📡 MEXC unhandled message:', data);
                         }
                     } catch (error) {
-                        console.error('MEXC message parse error:', error);
+                        console.error('MEXC message parse error:', error, event.data);
                     }
                 };
                 
@@ -467,10 +471,11 @@
                     wsConnections.okx.onmessage = (e) => {
                         try {
                             const data = JSON.parse(e.data);
-                            // OKX отправляет события подключения
-                            if (data.event === 'subscribe' || data.event === 'error') {
+                            // Логируем все сообщения для отладки
+                            if (data.event) {
+                                console.log(`📡 OKX event: ${data.event}`, data);
                                 if (data.event === 'error') {
-                                    console.error('OKX subscription error:', data);
+                                    console.error('❌ OKX subscription error:', data);
                                 }
                                 return;
                             }
@@ -492,6 +497,9 @@
                                         }
                                     }
                                 });
+                            } else {
+                                // Логируем необработанные сообщения
+                                console.log('📡 OKX unhandled message:', data);
                             }
                         } catch (err) {
                             console.error('OKX message parse error:', err, e.data);
@@ -530,13 +538,15 @@
                     kucoinWS.onmessage = (e) => {
                         try {
                             const data = JSON.parse(e.data);
-                            // KuCoin отправляет ping/pong, пропускаем
+                            // Логируем все сообщения для отладки
                             if (data.type === 'pong' || data.type === 'ack' || data.type === 'welcome' || data.type === 'ping') {
                                 if (data.type === 'ping') {
                                     kucoinWS.send(JSON.stringify({ type: 'pong', id: data.id }));
                                 }
                                 return;
                             }
+                            
+                            console.log('📡 KuCoin message:', data);
                             
                             // KuCoin формат: data.data содержит данные тикера
                             if (data.type === 'message' && data.data) {
@@ -619,8 +629,14 @@
                     wsConnections.bitget.onmessage = (e) => {
                         try {
                             const data = JSON.parse(e.data);
-                            // Bitget отправляет события подключения
-                            if (data.event === 'subscribe' || data.event === 'login' || data.action === 'subscribe') return;
+                            // Логируем события подключения
+                            if (data.event === 'subscribe' || data.event === 'login' || data.action === 'subscribe') {
+                                console.log(`📡 Bitget event: ${data.event || data.action}`, data);
+                                return;
+                            }
+                            
+                            // Логируем все сообщения для отладки
+                            console.log('📡 Bitget message:', data);
                             
                             // Bitget формат: data.data может быть объектом или массивом
                             let tickerData = null;
@@ -759,7 +775,15 @@
                                 return;
                             }
                             
-                            if (data.event === 'info' || data.event === 'pong') return;
+                            if (data.event === 'info' || data.event === 'pong') {
+                                console.log(`📡 Bitfinex event: ${data.event}`, data);
+                                return;
+                            }
+                            
+                            // Логируем все сообщения для отладки
+                            if (!Array.isArray(data)) {
+                                console.log('📡 Bitfinex unhandled message:', data);
+                            }
                             
                             // Bitfinex формат: [channelId, [BID, BID_SIZE, ASK, ASK_SIZE, ...]]
                             if (Array.isArray(data) && data.length >= 2) {
@@ -823,8 +847,11 @@
                             }
                             
                             const data = JSON.parse(textData);
-                            // BingX отправляет события подключения
-                            if (data.id && !data.data) return;
+                            // Логируем все сообщения для отладки
+                            if (data.id && !data.data) {
+                                console.log('📡 BingX event:', data);
+                                return;
+                            }
                             
                             if (data.data && data.data.bidPrice && data.data.askPrice) {
                                 const symbol = data.data.symbol;
@@ -841,6 +868,9 @@
                                         updateArbitrageData();
                                     }
                                 }
+                            } else {
+                                // Логируем необработанные сообщения
+                                console.log('📡 BingX unhandled message:', data);
                             }
                         } catch (err) {
                             // Не логируем ошибки Blob, так как это нормально для BingX
