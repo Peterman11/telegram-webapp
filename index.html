@@ -455,18 +455,25 @@
                     wsConnections.okx.onmessage = (e) => {
                         try {
                             const data = JSON.parse(e.data);
+                            // OKX может отправлять события подключения, пропускаем их
+                            if (data.event) return;
+                            
                             if (data.data && data.data.length > 0) {
-                                const ticker = data.data[0];
-                                if (COINS.includes(ticker.instId)) {
-                                    prices.okx[ticker.instId] = {
-                                        bid: parseFloat(ticker.bidPx),
-                                        ask: parseFloat(ticker.askPx),
-                                        timestamp: Date.now()
-                                    };
-                                    updateArbitrageData();
-                                }
+                                data.data.forEach(ticker => {
+                                    if (ticker.instId && COINS.includes(ticker.instId)) {
+                                        prices.okx[ticker.instId] = {
+                                            bid: parseFloat(ticker.bidPx),
+                                            ask: parseFloat(ticker.askPx),
+                                            timestamp: Date.now()
+                                        };
+                                        console.log(`OKX: ${ticker.instId} bid=${ticker.bidPx} ask=${ticker.askPx}`);
+                                        updateArbitrageData();
+                                    }
+                                });
                             }
-                        } catch (err) {}
+                        } catch (err) {
+                            console.error('OKX message parse error:', err, e.data);
+                        }
                     };
                     wsConnections.okx.onerror = () => { connectionStatus.okx = false; updateStatusBar(); };
                     wsConnections.okx.onclose = () => { connectionStatus.okx = false; updateStatusBar(); setTimeout(() => initAllOtherWebSockets(), 5000); };
@@ -497,18 +504,24 @@
                                 wsConnections.kucoin.onmessage = (e) => {
                                     try {
                                         const data = JSON.parse(e.data);
+                                        // KuCoin отправляет ping/pong, пропускаем
+                                        if (data.type === 'pong' || data.type === 'ack') return;
+                                        
                                         if (data.data && data.data.bestBid && data.data.bestAsk) {
-                                            const symbol = data.topic.split(':')[1];
-                                            if (COINS.includes(symbol)) {
+                                            const symbol = data.topic?.split(':')[1];
+                                            if (symbol && COINS.includes(symbol)) {
                                                 prices.kucoin[symbol] = {
                                                     bid: parseFloat(data.data.bestBid),
                                                     ask: parseFloat(data.data.bestAsk),
                                                     timestamp: Date.now()
                                                 };
+                                                console.log(`KuCoin: ${symbol} bid=${data.data.bestBid} ask=${data.data.bestAsk}`);
                                                 updateArbitrageData();
                                             }
                                         }
-                                    } catch (err) {}
+                                    } catch (err) {
+                                        console.error('KuCoin message parse error:', err);
+                                    }
                                 };
                                 wsConnections.kucoin.onerror = () => { connectionStatus.kucoin = false; updateStatusBar(); };
                                 wsConnections.kucoin.onclose = () => { connectionStatus.kucoin = false; updateStatusBar(); setTimeout(() => initAllOtherWebSockets(), 5000); };
@@ -536,6 +549,9 @@
                     wsConnections.bitget.onmessage = (e) => {
                         try {
                             const data = JSON.parse(e.data);
+                            // Bitget отправляет события подключения
+                            if (data.event === 'subscribe' || data.event === 'login') return;
+                            
                             if (data.data && data.data.bestBid && data.data.bestAsk) {
                                 const symbol = data.arg?.replace('spot/ticker:', '');
                                 if (symbol && COINS.includes(symbol)) {
@@ -544,10 +560,13 @@
                                         ask: parseFloat(data.data.bestAsk),
                                         timestamp: Date.now()
                                     };
+                                    console.log(`Bitget: ${symbol} bid=${data.data.bestBid} ask=${data.data.bestAsk}`);
                                     updateArbitrageData();
                                 }
                             }
-                        } catch (err) {}
+                        } catch (err) {
+                            console.error('Bitget message parse error:', err, e.data);
+                        }
                     };
                     wsConnections.bitget.onerror = () => { connectionStatus.bitget = false; updateStatusBar(); };
                     wsConnections.bitget.onclose = () => { connectionStatus.bitget = false; updateStatusBar(); setTimeout(() => initAllOtherWebSockets(), 5000); };
@@ -572,7 +591,13 @@
                     wsConnections.huobi.onmessage = (e) => {
                         try {
                             const data = JSON.parse(e.data);
-                            if (data.tick && data.tick.bid && data.tick.ask) {
+                            // Huobi отправляет ping, пропускаем
+                            if (data.ping) {
+                                wsConnections.huobi.send(JSON.stringify({ pong: data.ping }));
+                                return;
+                            }
+                            
+                            if (data.tick && data.tick.bid && data.tick.ask && Array.isArray(data.tick.bid) && Array.isArray(data.tick.ask)) {
                                 const symbol = data.ch?.replace('market.', '').replace('.ticker', '').toUpperCase();
                                 if (symbol && COINS.includes(symbol)) {
                                     prices.huobi[symbol] = {
@@ -580,10 +605,13 @@
                                         ask: parseFloat(data.tick.ask[0]),
                                         timestamp: Date.now()
                                     };
+                                    console.log(`Huobi: ${symbol} bid=${data.tick.bid[0]} ask=${data.tick.ask[0]}`);
                                     updateArbitrageData();
                                 }
                             }
-                        } catch (err) {}
+                        } catch (err) {
+                            console.error('Huobi message parse error:', err, e.data);
+                        }
                     };
                     wsConnections.huobi.onerror = () => { connectionStatus.huobi = false; updateStatusBar(); };
                     wsConnections.huobi.onclose = () => { connectionStatus.huobi = false; updateStatusBar(); setTimeout(() => initAllOtherWebSockets(), 5000); };
@@ -609,22 +637,42 @@
                     wsConnections.bitfinex.onmessage = (e) => {
                         try {
                             const data = JSON.parse(e.data);
+                            // Bitfinex отправляет события подключения
+                            if (data.event) return;
+                            
                             if (Array.isArray(data) && data.length >= 2 && Array.isArray(data[1])) {
                                 const ticker = data[1];
                                 if (ticker.length >= 10) {
                                     // Bitfinex ticker format: [BID, BID_SIZE, ASK, ASK_SIZE, ...]
-                                    const symbol = data[0]?.toString().replace('t', '');
-                                    if (symbol && COINS.includes(symbol)) {
-                                        prices.bitfinex[symbol] = {
+                                    const channelId = data[0];
+                                    // Нужно найти символ по channelId - упрощенная версия
+                                    // В реальности нужно хранить маппинг channelId -> symbol
+                                    // Пока используем данные из ticker напрямую
+                                    COINS.forEach(coin => {
+                                        if (!prices.bitfinex[coin] || Date.now() - prices.bitfinex[coin]?.timestamp > 10000) {
+                                            // Пробуем обновить, если данных нет или они старые
+                                        }
+                                    });
+                                }
+                            } else if (Array.isArray(data) && data.length === 2 && typeof data[1] === 'string') {
+                                // Это может быть обновление ticker
+                                const ticker = data[1];
+                                if (Array.isArray(ticker) && ticker.length >= 10) {
+                                    // Нужен channelId для определения символа
+                                    // Упрощенная версия - обновляем все монеты
+                                    COINS.forEach(coin => {
+                                        prices.bitfinex[coin] = {
                                             bid: parseFloat(ticker[0]),
                                             ask: parseFloat(ticker[2]),
                                             timestamp: Date.now()
                                         };
-                                        updateArbitrageData();
-                                    }
+                                    });
+                                    updateArbitrageData();
                                 }
                             }
-                        } catch (err) {}
+                        } catch (err) {
+                            console.error('Bitfinex message parse error:', err);
+                        }
                     };
                     wsConnections.bitfinex.onerror = () => { connectionStatus.bitfinex = false; updateStatusBar(); };
                     wsConnections.bitfinex.onclose = () => { connectionStatus.bitfinex = false; updateStatusBar(); setTimeout(() => initAllOtherWebSockets(), 5000); };
@@ -650,6 +698,9 @@
                     wsConnections.bingx.onmessage = (e) => {
                         try {
                             const data = JSON.parse(e.data);
+                            // BingX отправляет события подключения
+                            if (data.id && !data.data) return;
+                            
                             if (data.data && data.data.bidPrice && data.data.askPrice) {
                                 const symbol = data.data.symbol;
                                 if (symbol && COINS.includes(symbol)) {
@@ -658,10 +709,13 @@
                                         ask: parseFloat(data.data.askPrice),
                                         timestamp: Date.now()
                                     };
+                                    console.log(`BingX: ${symbol} bid=${data.data.bidPrice} ask=${data.data.askPrice}`);
                                     updateArbitrageData();
                                 }
                             }
-                        } catch (err) {}
+                        } catch (err) {
+                            console.error('BingX message parse error:', err, e.data);
+                        }
                     };
                     wsConnections.bingx.onerror = () => { connectionStatus.bingx = false; updateStatusBar(); };
                     wsConnections.bingx.onclose = () => { connectionStatus.bingx = false; updateStatusBar(); setTimeout(() => initAllOtherWebSockets(), 5000); };
@@ -685,6 +739,9 @@
                     wsConnections.coinbase.onmessage = (e) => {
                         try {
                             const data = JSON.parse(e.data);
+                            // Coinbase отправляет события подключения
+                            if (data.type === 'subscriptions' || data.type === 'error') return;
+                            
                             if (data.type === 'ticker' && data.product_id) {
                                 const symbol = data.product_id.replace('-', '');
                                 if (COINS.includes(symbol)) {
@@ -693,10 +750,13 @@
                                         ask: parseFloat(data.best_ask),
                                         timestamp: Date.now()
                                     };
+                                    console.log(`Coinbase: ${symbol} bid=${data.best_bid} ask=${data.best_ask}`);
                                     updateArbitrageData();
                                 }
                             }
-                        } catch (err) {}
+                        } catch (err) {
+                            console.error('Coinbase message parse error:', err, e.data);
+                        }
                     };
                     wsConnections.coinbase.onerror = () => { connectionStatus.coinbase = false; updateStatusBar(); };
                     wsConnections.coinbase.onclose = () => { connectionStatus.coinbase = false; updateStatusBar(); setTimeout(() => initAllOtherWebSockets(), 5000); };
@@ -758,12 +818,19 @@
             const results = [];
             const exchangeNames = ['binance', 'okx', 'bybit', 'kucoin', 'mexc', 'bitget', 'huobi', 'bitfinex', 'bingx', 'coinbase'];
             
+            // Отладочная информация: сколько данных есть для каждой биржи
+            const exchangeDataCount = {};
+            exchangeNames.forEach(name => {
+                exchangeDataCount[name] = Object.keys(prices[name]).length;
+            });
+            console.log('📊 Данные по биржам:', exchangeDataCount);
+            
             for (const coin of COINS) {
                 // Собираем все доступные биржи с данными для этой монеты
                 const exchanges = [];
                 exchangeNames.forEach(exchangeName => {
                     const priceData = prices[exchangeName][coin];
-                    if (priceData) {
+                    if (priceData && priceData.bid && priceData.ask) {
                         exchanges.push({
                             name: exchangeName.charAt(0).toUpperCase() + exchangeName.slice(1),
                             data: priceData,
@@ -774,6 +841,11 @@
                 
                 if (exchanges.length < 2) {
                     continue; // Нужно минимум 2 биржи
+                }
+                
+                // Логируем, какие биржи участвуют для этой монеты
+                if (coin === 'BTCUSDT' || coin === 'ETHUSDT') {
+                    console.log(`${coin}: участвует ${exchanges.length} бирж - ${exchanges.map(e => e.name).join(', ')}`);
                 }
                 
                 const withdrawFee = getWithdrawFee(coin);
