@@ -655,11 +655,75 @@
             }, 1000);
         };
         
+        // Функция для начальной загрузки данных через REST API
+        async function loadInitialData() {
+            console.log('Loading initial data via REST API...');
+            contentDiv.innerHTML = '<div class="loading">Загрузка начальных данных...</div>';
+            
+            for (const coin of COINS) {
+                try {
+                    const [binance, bybit, mexc] = await Promise.all([
+                        fetch(`https://api.binance.com/api/v3/ticker/bookTicker?symbol=${coin}`)
+                            .then(r => r.json())
+                            .then(d => ({
+                                bid: parseFloat(d.bidPrice),
+                                ask: parseFloat(d.askPrice)
+                            }))
+                            .catch(() => null),
+                        fetch(`https://api.bybit.com/v5/market/orderbook?category=spot&symbol=${coin}&limit=1`)
+                            .then(r => r.json())
+                            .then(d => {
+                                if (d.retCode === 0 && d.result && d.result.b && d.result.a) {
+                                    return {
+                                        bid: parseFloat(d.result.b[0][0]),
+                                        ask: parseFloat(d.result.a[0][0])
+                                    };
+                                }
+                                return null;
+                            })
+                            .catch(() => null),
+                        fetch(`https://api.mexc.com/api/v3/ticker/bookTicker?symbol=${coin}`)
+                            .then(r => r.json())
+                            .then(d => ({
+                                bid: parseFloat(d.bidPrice),
+                                ask: parseFloat(d.askPrice)
+                            }))
+                            .catch(() => null)
+                    ]);
+                    
+                    if (binance) {
+                        prices.binance[coin] = {...binance, timestamp: Date.now()};
+                        console.log(`✅ Loaded Binance ${coin} via REST`);
+                    }
+                    if (bybit) {
+                        prices.bybit[coin] = {...bybit, timestamp: Date.now()};
+                        console.log(`✅ Loaded Bybit ${coin} via REST`);
+                    }
+                    if (mexc) {
+                        prices.mexc[coin] = {...mexc, timestamp: Date.now()};
+                        console.log(`✅ Loaded MEXC ${coin} via REST`);
+                    }
+                } catch (error) {
+                    console.error(`❌ Error loading initial data for ${coin}:`, error);
+                }
+            }
+            
+            console.log('Initial data loaded, updating arbitrage...');
+            updateArbitrageData();
+        }
+        
         // Инициализируем WebSocket соединения при загрузке
         updateStatusBar();
-        initBinanceWebSocket();
-        initBybitWebSocket();
-        initMexcWebSocket();
+        
+        // Загружаем начальные данные через REST API (чтобы сразу показать список)
+        loadInitialData();
+        
+        // Подключаемся через WebSocket для обновлений в реальном времени
+        setTimeout(() => {
+            initBinanceWebSocket();
+            initBybitWebSocket();
+            initMexcWebSocket();
+        }, 500);
     </script>
 </body>
 </html>
