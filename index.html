@@ -767,7 +767,20 @@
                             })
                             .catch(err => {
                                 console.error(`MEXC REST API error for ${coin}:`, err);
-                                return null;
+                                // Пробуем альтернативный endpoint как fallback
+                                return fetch(`https://www.mexc.com/open/api/v2/market/ticker?symbol=${coin}`)
+                                    .then(r => r.ok ? r.json() : null)
+                                    .then(d => {
+                                        if (d && d.data && d.data.bid && d.data.ask) {
+                                            console.log(`✅ MEXC v2 fallback for ${coin}:`, d);
+                                            return {
+                                                bid: parseFloat(d.data.bid),
+                                                ask: parseFloat(d.data.ask)
+                                            };
+                                        }
+                                        return null;
+                                    })
+                                    .catch(() => null);
                             })
                     ]);
                     
