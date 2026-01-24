@@ -854,12 +854,18 @@
             });
             console.log('📊 Данные по биржам:', exchangeDataCount);
             
+            // Подсчитываем общее количество полученных цен
+            const totalPrices = Object.values(prices).reduce((sum, p) => sum + Object.keys(p).length, 0);
+            console.log(`📈 Всего получено цен: ${totalPrices}`);
+            
             for (const coin of COINS) {
                 // Собираем все доступные биржи с данными для этой монеты
                 const exchanges = [];
                 exchangeNames.forEach(exchangeName => {
                     const priceData = prices[exchangeName][coin];
-                    if (priceData && priceData.bid && priceData.ask) {
+                    if (priceData && priceData.bid && priceData.ask && 
+                        !isNaN(priceData.bid) && !isNaN(priceData.ask) &&
+                        priceData.bid > 0 && priceData.ask > 0) {
                         exchanges.push({
                             name: exchangeName.charAt(0).toUpperCase() + exchangeName.slice(1),
                             data: priceData,
@@ -869,6 +875,9 @@
                 });
                 
                 if (exchanges.length < 2) {
+                    if (exchanges.length > 0) {
+                        console.log(`⚠️ ${coin}: недостаточно бирж (${exchanges.length}/2) - ${exchanges.map(e => e.name).join(', ')}`);
+                    }
                     continue; // Нужно минимум 2 биржи
                 }
                 
@@ -927,6 +936,8 @@
             results.sort((a, b) => b.maxProfit - a.maxProfit);
             const topResults = results.slice(0, 10); // Только лучшие 10 возможностей
             
+            console.log(`📊 Найдено ${results.length} возможностей арбитража, показываем топ-${topResults.length}`);
+            
             if (topResults.length === 0) {
                 const connected = Object.values(connectionStatus).filter(s => s).length;
                 const totalExchanges = Object.keys(connectionStatus).length;
@@ -934,13 +945,22 @@
                 
                 console.warn(`⚠️ Нет результатов арбитража. Подключено: ${connected}/${totalExchanges} бирж, Всего цен: ${totalPrices}`);
                 
+                // Показываем детальную информацию о том, какие данные есть
+                let statusHtml = '<div class="loading">';
                 if (connected === 0 && totalPrices === 0) {
-                    contentDiv.innerHTML = '<div class="error">Ожидание подключения к биржам...<br>Проверьте консоль для деталей.</div>';
+                    statusHtml += '⏳ Ожидание подключения к биржам...<br>';
+                    statusHtml += '📡 WebSocket подключения инициализируются...<br>';
                 } else if (totalPrices === 0) {
-                    contentDiv.innerHTML = '<div class="loading">Ожидание данных с бирж...<br>Проверьте консоль для деталей.</div>';
+                    statusHtml += '⏳ Ожидание данных с бирж...<br>';
+                    statusHtml += `🔌 Подключено: ${connected}/${totalExchanges} бирж<br>`;
                 } else {
-                    contentDiv.innerHTML = `<div class="loading">Недостаточно данных для расчета арбитража.<br>Получено цен: ${totalPrices}, нужно минимум 2 биржи для каждой монеты.<br>Проверьте консоль для деталей.</div>`;
+                    statusHtml += `⚠️ Недостаточно данных для расчета арбитража<br>`;
+                    statusHtml += `📊 Получено цен: ${totalPrices}<br>`;
+                    statusHtml += `🔌 Подключено: ${connected}/${totalExchanges} бирж<br>`;
+                    statusHtml += `💡 Нужно минимум 2 биржи для каждой монеты<br>`;
                 }
+                statusHtml += '<br>📝 Откройте консоль (F12) для детальной информации</div>';
+                contentDiv.innerHTML = statusHtml;
                 return;
             }
             
@@ -1260,15 +1280,23 @@
                         if (data && data.bid && data.ask) {
                             prices[name][coin] = {...data, timestamp: Date.now()};
                             console.log(`✅ REST ${name} ${coin}: bid=${data.bid} ask=${data.ask}`);
+                            successCount++;
                         } else if (data) {
                             console.warn(`⚠️ REST ${name} ${coin}: неполные данные`, data);
+                            errorCount++;
+                        } else {
+                            console.warn(`❌ REST ${name} ${coin}: нет данных (возможно CORS или ошибка API)`);
+                            errorCount++;
                         }
                     });
                     
                 } catch (error) {
                     console.error(`❌ Error loading initial data for ${coin}:`, error);
+                    errorCount++;
                 }
             }
+            
+            console.log(`\n📊 Итоги загрузки: ${successCount} успешных, ${errorCount} ошибок`);
             
             console.log('✅ Начальные данные загружены для всех бирж и всех монет');
             console.log('📊 Текущее состояние цен:');
