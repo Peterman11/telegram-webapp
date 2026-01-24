@@ -240,7 +240,8 @@
             }
             
             try {
-                // Binance WebSocket для всех bookTicker
+                // Binance WebSocket для СПОТОВОЙ торговли (Spot Market Data Stream)
+                // wss://stream.binance.com:9443/ws/!bookTicker - только спотовая торговля
                 binanceWS = new WebSocket('wss://stream.binance.com:9443/ws/!bookTicker');
                 
                 binanceWS.onopen = () => {
@@ -293,6 +294,8 @@
             }
             
             try {
+                // Bybit WebSocket для СПОТОВОЙ торговли
+                // wss://stream.bybit.com/v5/public/spot - явно указан /spot (спотовая торговля)
                 bybitWS = new WebSocket('wss://stream.bybit.com/v5/public/spot');
                 
                 bybitWS.onopen = () => {
@@ -361,6 +364,8 @@
             }
             
             try {
+                // MEXC WebSocket для СПОТОВОЙ торговли
+                // wss://wbs-api.mexc.com/ws - используется для спотовой торговли (spot market)
                 mexcWS = new WebSocket('wss://wbs-api.mexc.com/ws');
                 
                 mexcWS.onopen = () => {
@@ -676,6 +681,7 @@
             for (const coin of COINS) {
                 try {
                     const [binance, bybit, mexc] = await Promise.all([
+                        // Binance REST API для СПОТОВОЙ торговли (/api/v3/ - только спот)
                         fetch(`https://api.binance.com/api/v3/ticker/bookTicker?symbol=${coin}`)
                             .then(r => r.json())
                             .then(d => ({
@@ -683,6 +689,7 @@
                                 ask: parseFloat(d.askPrice)
                             }))
                             .catch(() => null),
+                        // Bybit REST API для СПОТОВОЙ торговли (category=spot - явно спот)
                         fetch(`https://api.bybit.com/v5/market/orderbook?category=spot&symbol=${coin}&limit=1`)
                             .then(r => r.json())
                             .then(d => {
@@ -695,7 +702,7 @@
                                 return null;
                             })
                             .catch(() => null),
-                        // MEXC официальный REST API согласно документации:
+                        // MEXC REST API для СПОТОВОЙ торговли (/api/v3/ - только спот)
                         // https://mxcdevelop.github.io/apidocs/spot_v3_en/#24hr-ticker-price-change-statistics
                         fetch(`https://api.mexc.com/api/v3/ticker/bookTicker?symbol=${coin}`)
                             .then(r => {
