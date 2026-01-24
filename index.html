@@ -368,47 +368,81 @@
                     connectionStatus.mexc = true;
                     updateStatusBar();
                     
-                    // Подписываемся на ticker для всех монет
+                    // MEXC WebSocket подписка - пробуем разные форматы
                     COINS.forEach(coin => {
-                        const subscribeMsg = {
+                        // Формат 1: sub.ticker
+                        const subscribeMsg1 = {
                             method: 'sub.ticker',
                             param: {
                                 symbol: coin.toLowerCase()
                             }
                         };
-                        mexcWS.send(JSON.stringify(subscribeMsg));
+                        mexcWS.send(JSON.stringify(subscribeMsg1));
+                        
+                        // Формат 2: sub.depth (orderbook)
+                        const subscribeMsg2 = {
+                            method: 'sub.depth',
+                            param: {
+                                symbol: coin.toLowerCase(),
+                                limit: 1
+                            }
+                        };
+                        mexcWS.send(JSON.stringify(subscribeMsg2));
                     });
                 };
                 
                 mexcWS.onmessage = (event) => {
                     try {
                         const data = JSON.parse(event.data);
-                        console.log('MEXC message:', data);
+                        console.log('MEXC WebSocket message:', data);
                         
-                        // Обработка ticker данных - MEXC может отправлять данные в разных форматах
+                        // Обработка разных форматов MEXC
+                        let symbol = null;
+                        let bid = null;
+                        let ask = null;
+                        
+                        // Формат 1: {c: "btcusdt", d: {b: "bid", a: "ask"}}
                         if (data.c && data.d) {
-                            const symbol = data.c.toUpperCase();
-                            if (COINS.includes(symbol) && data.d.b && data.d.a) {
-                                prices.mexc[symbol] = {
-                                    bid: parseFloat(data.d.b),
-                                    ask: parseFloat(data.d.a),
-                                    timestamp: Date.now()
-                                };
-                                console.log(`MEXC: ${symbol} bid=${data.d.b} ask=${data.d.a}`);
-                                updateArbitrageData();
+                            symbol = data.c.toUpperCase();
+                            if (data.d.b && data.d.a) {
+                                bid = parseFloat(data.d.b);
+                                ask = parseFloat(data.d.a);
                             }
-                        } else if (data.channel && data.channel.startsWith('spot@ticker@')) {
-                            // Альтернативный формат MEXC
-                            const symbol = data.channel.replace('spot@ticker@', '').toUpperCase();
-                            if (COINS.includes(symbol) && data.data) {
-                                prices.mexc[symbol] = {
-                                    bid: parseFloat(data.data.bid),
-                                    ask: parseFloat(data.data.ask),
-                                    timestamp: Date.now()
-                                };
-                                console.log(`MEXC (alt): ${symbol} bid=${data.data.bid} ask=${data.data.ask}`);
-                                updateArbitrageData();
+                        }
+                        // Формат 2: {channel: "spot@ticker@btcusdt", data: {bid: "...", ask: "..."}}
+                        else if (data.channel && data.channel.startsWith('spot@ticker@')) {
+                            symbol = data.channel.replace('spot@ticker@', '').toUpperCase();
+                            if (data.data && data.data.bid && data.data.ask) {
+                                bid = parseFloat(data.data.bid);
+                                ask = parseFloat(data.data.ask);
                             }
+                        }
+                        // Формат 3: {symbol: "BTCUSDT", bid: "...", ask: "..."}
+                        else if (data.symbol) {
+                            symbol = data.symbol.toUpperCase();
+                            if (data.bid && data.ask) {
+                                bid = parseFloat(data.bid);
+                                ask = parseFloat(data.ask);
+                            }
+                        }
+                        // Формат 4: depth (orderbook)
+                        else if (data.channel && data.channel.includes('@depth@')) {
+                            symbol = data.channel.split('@')[2].toUpperCase();
+                            if (data.data && data.data.bids && data.data.asks && 
+                                data.data.bids.length > 0 && data.data.asks.length > 0) {
+                                bid = parseFloat(data.data.bids[0][0]);
+                                ask = parseFloat(data.data.asks[0][0]);
+                            }
+                        }
+                        
+                        if (symbol && COINS.includes(symbol) && bid && ask && !isNaN(bid) && !isNaN(ask)) {
+                            prices.mexc[symbol] = {
+                                bid: bid,
+                                ask: ask,
+                                timestamp: Date.now()
+                            };
+                            console.log(`✅ MEXC WebSocket: ${symbol} bid=${bid} ask=${ask}`);
+                            updateArbitrageData();
                         }
                     } catch (error) {
                         console.error('MEXC message parse error:', error, event.data);
