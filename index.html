@@ -617,29 +617,49 @@
                             }));
                         });
                     };
-                    wsConnections.huobi.onmessage = (e) => {
+                    wsConnections.huobi.onmessage = async (e) => {
                         try {
-                            const data = JSON.parse(e.data);
+                            // Huobi отправляет данные в формате Blob, нужно сначала преобразовать в текст
+                            let textData;
+                            if (e.data instanceof Blob) {
+                                textData = await e.data.text();
+                            } else if (typeof e.data === 'string') {
+                                textData = e.data;
+                            } else {
+                                // Пробуем преобразовать ArrayBuffer
+                                textData = new TextDecoder().decode(e.data);
+                            }
+                            
+                            const data = JSON.parse(textData);
                             // Huobi отправляет ping, пропускаем
                             if (data.ping) {
                                 wsConnections.huobi.send(JSON.stringify({ pong: data.ping }));
                                 return;
                             }
                             
-                            if (data.tick && data.tick.bid && data.tick.ask && Array.isArray(data.tick.bid) && Array.isArray(data.tick.ask)) {
+                            if (data.tick && data.tick.bid && data.tick.ask) {
                                 const symbol = data.ch?.replace('market.', '').replace('.ticker', '').toUpperCase();
                                 if (symbol && COINS.includes(symbol)) {
-                                    prices.huobi[symbol] = {
-                                        bid: parseFloat(data.tick.bid[0]),
-                                        ask: parseFloat(data.tick.ask[0]),
-                                        timestamp: Date.now()
-                                    };
-                                    console.log(`Huobi: ${symbol} bid=${data.tick.bid[0]} ask=${data.tick.ask[0]}`);
-                                    updateArbitrageData();
+                                    // Huobi может отправлять bid/ask как массивы или как числа
+                                    const bid = Array.isArray(data.tick.bid) ? parseFloat(data.tick.bid[0]) : parseFloat(data.tick.bid);
+                                    const ask = Array.isArray(data.tick.ask) ? parseFloat(data.tick.ask[0]) : parseFloat(data.tick.ask);
+                                    
+                                    if (!isNaN(bid) && !isNaN(ask) && bid > 0 && ask > 0) {
+                                        prices.huobi[symbol] = {
+                                            bid: bid,
+                                            ask: ask,
+                                            timestamp: Date.now()
+                                        };
+                                        console.log(`✅ Huobi ${symbol}: bid=${bid} ask=${ask}`);
+                                        updateArbitrageData();
+                                    }
                                 }
                             }
                         } catch (err) {
-                            console.error('Huobi message parse error:', err, e.data);
+                            // Не логируем ошибки Blob, так как это нормально для Huobi
+                            if (!(e.data instanceof Blob)) {
+                                console.error('Huobi message parse error:', err, e.data);
+                            }
                         }
                     };
                     wsConnections.huobi.onerror = () => { connectionStatus.huobi = false; updateStatusBar(); };
@@ -994,9 +1014,11 @@
             }
             
             // Отображаем только ТОП лучшие возможности
+            console.log('🎨 Начинаем рендеринг HTML для', topResults.length, 'результатов');
             let html = '<div class="arbitrage-list">';
             
             for (const result of topResults) {
+                console.log('  Рендерим:', result.coin, 'прибыль:', result.maxProfit, 'биржи:', Object.keys(result.prices).length);
                 const isPositive = result.maxProfit >= 0;
                 const scenario = result.bestScenario;
                 const scenarioText = `${scenario.buyExchange} → ${scenario.sellExchange} (${formatNumber(scenario.profit)} USDT)`;
