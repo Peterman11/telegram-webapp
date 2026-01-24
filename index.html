@@ -622,15 +622,29 @@
                             // Bitget отправляет события подключения
                             if (data.event === 'subscribe' || data.event === 'login' || data.action === 'subscribe') return;
                             
-                            if (data.data && data.data.bestBid && data.data.bestAsk) {
-                                const symbol = data.arg?.replace('spot/ticker:', '');
-                                if (symbol && COINS.includes(symbol)) {
+                            // Bitget формат: data.data может быть объектом или массивом
+                            let tickerData = null;
+                            if (data.data) {
+                                if (Array.isArray(data.data) && data.data.length > 0) {
+                                    tickerData = data.data[0];
+                                } else if (typeof data.data === 'object') {
+                                    tickerData = data.data;
+                                }
+                            }
+                            
+                            if (tickerData) {
+                                // Bitget может использовать разные поля для bid/ask
+                                const bid = parseFloat(tickerData.bestBid || tickerData.buyOne || tickerData.bidPx || 0);
+                                const ask = parseFloat(tickerData.bestAsk || tickerData.sellOne || tickerData.askPx || 0);
+                                const symbol = data.arg?.replace('spot/ticker:', '') || tickerData.symbol;
+                                
+                                if (symbol && COINS.includes(symbol) && !isNaN(bid) && !isNaN(ask) && bid > 0 && ask > 0) {
                                     prices.bitget[symbol] = {
-                                        bid: parseFloat(data.data.bestBid),
-                                        ask: parseFloat(data.data.bestAsk),
+                                        bid: bid,
+                                        ask: ask,
                                         timestamp: Date.now()
                                     };
-                                    console.log(`✅ Bitget ${symbol}: bid=${data.data.bestBid} ask=${data.data.bestAsk}`);
+                                    console.log(`✅ Bitget ${symbol}: bid=${bid} ask=${ask}`);
                                     updateArbitrageData();
                                 }
                             }
