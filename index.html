@@ -252,16 +252,18 @@
                 binanceWS.onmessage = (event) => {
                     try {
                         const data = JSON.parse(event.data);
+                        // Binance отправляет данные в формате {s: "BTCUSDT", b: "bid", a: "ask"}
                         if (data.s && COINS.includes(data.s)) {
                             prices.binance[data.s] = {
                                 bid: parseFloat(data.b),
                                 ask: parseFloat(data.a),
                                 timestamp: Date.now()
                             };
+                            console.log(`Binance: ${data.s} bid=${data.b} ask=${data.a}`);
                             updateArbitrageData();
                         }
                     } catch (error) {
-                        console.error('Binance message parse error:', error);
+                        console.error('Binance message parse error:', error, event.data);
                     }
                 };
                 
@@ -309,6 +311,7 @@
                 bybitWS.onmessage = (event) => {
                     try {
                         const data = JSON.parse(event.data);
+                        console.log('Bybit message:', data);
                         
                         // Обработка orderbook данных
                         if (data.topic && data.topic.startsWith('orderbook.1.')) {
@@ -322,12 +325,13 @@
                                         ask: parseFloat(asks[0][0]),
                                         timestamp: Date.now()
                                     };
+                                    console.log(`Bybit: ${symbol} bid=${bids[0][0]} ask=${asks[0][0]}`);
                                     updateArbitrageData();
                                 }
                             }
                         }
                     } catch (error) {
-                        console.error('Bybit message parse error:', error);
+                        console.error('Bybit message parse error:', error, event.data);
                     }
                 };
                 
@@ -379,8 +383,9 @@
                 mexcWS.onmessage = (event) => {
                     try {
                         const data = JSON.parse(event.data);
+                        console.log('MEXC message:', data);
                         
-                        // Обработка ticker данных
+                        // Обработка ticker данных - MEXC может отправлять данные в разных форматах
                         if (data.c && data.d) {
                             const symbol = data.c.toUpperCase();
                             if (COINS.includes(symbol) && data.d.b && data.d.a) {
@@ -389,11 +394,24 @@
                                     ask: parseFloat(data.d.a),
                                     timestamp: Date.now()
                                 };
+                                console.log(`MEXC: ${symbol} bid=${data.d.b} ask=${data.d.a}`);
+                                updateArbitrageData();
+                            }
+                        } else if (data.channel && data.channel.startsWith('spot@ticker@')) {
+                            // Альтернативный формат MEXC
+                            const symbol = data.channel.replace('spot@ticker@', '').toUpperCase();
+                            if (COINS.includes(symbol) && data.data) {
+                                prices.mexc[symbol] = {
+                                    bid: parseFloat(data.data.bid),
+                                    ask: parseFloat(data.data.ask),
+                                    timestamp: Date.now()
+                                };
+                                console.log(`MEXC (alt): ${symbol} bid=${data.data.bid} ask=${data.data.ask}`);
                                 updateArbitrageData();
                             }
                         }
                     } catch (error) {
-                        console.error('MEXC message parse error:', error);
+                        console.error('MEXC message parse error:', error, event.data);
                     }
                 };
                 
