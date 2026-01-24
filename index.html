@@ -204,78 +204,104 @@
         // Объем для расчета (в USDT)
         const TRADE_AMOUNT = 100;
         
-        // Торговые комиссии (0.1% = 0.001)
-        const BINANCE_TRADE_FEE = 0.001;
-        const BYBIT_TRADE_FEE = 0.001;
-        const MEXC_TRADE_FEE = 0.001;
+        // Торговые комиссии для всех бирж (0.1% = 0.001)
+        const TRADE_FEES = {
+            binance: 0.001,
+            okx: 0.001,
+            bybit: 0.001,
+            kucoin: 0.001,
+            mexc: 0.001,
+            bitget: 0.001,
+            huobi: 0.001,
+            bitfinex: 0.001,
+            bingx: 0.001,
+            coinbase: 0.001
+        };
         
         // Комиссия вывода убрана - используем только торговые комиссии
         function getWithdrawFee(coin) {
             return 0.0; // Без комиссии вывода
         }
         
-        // Хранилище цен с бирж
+        // Хранилище цен с всех бирж
         const prices = {
             binance: {},
+            okx: {},
             bybit: {},
-            mexc: {}
+            kucoin: {},
+            mexc: {},
+            bitget: {},
+            huobi: {},
+            bitfinex: {},
+            bingx: {},
+            coinbase: {}
         };
         
-        // WebSocket соединения
-        let binanceWS = null;
-        let bybitWS = null;
-        let mexcWS = null;
+        // WebSocket соединения для всех бирж
+        const wsConnections = {
+            binance: null,
+            okx: null,
+            bybit: null,
+            kucoin: null,
+            mexc: null,
+            bitget: null,
+            huobi: null,
+            bitfinex: null,
+            bingx: null,
+            coinbase: null
+        };
         
-        // Статус подключений
+        // Статус подключений для всех бирж
         const connectionStatus = {
             binance: false,
+            okx: false,
             bybit: false,
-            mexc: false
+            kucoin: false,
+            mexc: false,
+            bitget: false,
+            huobi: false,
+            bitfinex: false,
+            bingx: false,
+            coinbase: false
         };
         
         // Инициализация WebSocket для Binance
         function initBinanceWebSocket() {
-            if (binanceWS && binanceWS.readyState === WebSocket.OPEN) {
+            if (wsConnections.binance && wsConnections.binance.readyState === WebSocket.OPEN) {
                 return;
             }
             
             try {
-                // Binance WebSocket для СПОТОВОЙ торговли (Spot Market Data Stream)
-                // wss://stream.binance.com:9443/ws/!bookTicker - только спотовая торговля
-                binanceWS = new WebSocket('wss://stream.binance.com:9443/ws/!bookTicker');
+                wsConnections.binance = new WebSocket('wss://stream.binance.com:9443/ws/!bookTicker');
                 
-                binanceWS.onopen = () => {
+                wsConnections.binance.onopen = () => {
                     console.log('✅ Binance WebSocket connected');
                     connectionStatus.binance = true;
                     updateStatusBar();
                 };
                 
-                binanceWS.onmessage = (event) => {
+                wsConnections.binance.onmessage = (event) => {
                     try {
                         const data = JSON.parse(event.data);
-                        // Binance отправляет данные в формате {s: "BTCUSDT", b: "bid", a: "ask"}
                         if (data.s && COINS.includes(data.s)) {
                             prices.binance[data.s] = {
                                 bid: parseFloat(data.b),
                                 ask: parseFloat(data.a),
                                 timestamp: Date.now()
                             };
-                            console.log(`Binance: ${data.s} bid=${data.b} ask=${data.a}`);
                             updateArbitrageData();
                         }
                     } catch (error) {
-                        console.error('Binance message parse error:', error, event.data);
+                        console.error('Binance message parse error:', error);
                     }
                 };
                 
-                binanceWS.onerror = (error) => {
-                    console.error('Binance WebSocket error:', error);
+                wsConnections.binance.onerror = () => {
                     connectionStatus.binance = false;
                     updateStatusBar();
                 };
                 
-                binanceWS.onclose = () => {
-                    console.log('Binance WebSocket closed, reconnecting...');
+                wsConnections.binance.onclose = () => {
                     connectionStatus.binance = false;
                     updateStatusBar();
                     setTimeout(initBinanceWebSocket, 5000);
@@ -289,34 +315,28 @@
         
         // Инициализация WebSocket для Bybit
         function initBybitWebSocket() {
-            if (bybitWS && bybitWS.readyState === WebSocket.OPEN) {
+            if (wsConnections.bybit && wsConnections.bybit.readyState === WebSocket.OPEN) {
                 return;
             }
             
             try {
-                // Bybit WebSocket для СПОТОВОЙ торговли
-                // wss://stream.bybit.com/v5/public/spot - явно указан /spot (спотовая торговля)
-                bybitWS = new WebSocket('wss://stream.bybit.com/v5/public/spot');
+                wsConnections.bybit = new WebSocket('wss://stream.bybit.com/v5/public/spot');
                 
-                bybitWS.onopen = () => {
+                wsConnections.bybit.onopen = () => {
                     console.log('✅ Bybit WebSocket connected');
                     connectionStatus.bybit = true;
                     updateStatusBar();
                     
-                    // Подписываемся на orderbook для всех монет
                     const subscribeMsg = {
                         op: 'subscribe',
                         args: COINS.map(coin => `orderbook.1.${coin}`)
                     };
-                    bybitWS.send(JSON.stringify(subscribeMsg));
+                    wsConnections.bybit.send(JSON.stringify(subscribeMsg));
                 };
                 
-                bybitWS.onmessage = (event) => {
+                wsConnections.bybit.onmessage = (event) => {
                     try {
                         const data = JSON.parse(event.data);
-                        console.log('Bybit message:', data);
-                        
-                        // Обработка orderbook данных
                         if (data.topic && data.topic.startsWith('orderbook.1.')) {
                             const symbol = data.topic.replace('orderbook.1.', '');
                             if (COINS.includes(symbol) && data.data && data.data.b && data.data.a) {
@@ -328,24 +348,21 @@
                                         ask: parseFloat(asks[0][0]),
                                         timestamp: Date.now()
                                     };
-                                    console.log(`Bybit: ${symbol} bid=${bids[0][0]} ask=${asks[0][0]}`);
                                     updateArbitrageData();
                                 }
                             }
                         }
                     } catch (error) {
-                        console.error('Bybit message parse error:', error, event.data);
+                        console.error('Bybit message parse error:', error);
                     }
                 };
                 
-                bybitWS.onerror = (error) => {
-                    console.error('Bybit WebSocket error:', error);
+                wsConnections.bybit.onerror = () => {
                     connectionStatus.bybit = false;
                     updateStatusBar();
                 };
                 
-                bybitWS.onclose = () => {
-                    console.log('Bybit WebSocket closed, reconnecting...');
+                wsConnections.bybit.onclose = () => {
                     connectionStatus.bybit = false;
                     updateStatusBar();
                     setTimeout(initBybitWebSocket, 5000);
@@ -359,79 +376,56 @@
         
         // Инициализация WebSocket для MEXC
         function initMexcWebSocket() {
-            if (mexcWS && mexcWS.readyState === WebSocket.OPEN) {
+            if (wsConnections.mexc && wsConnections.mexc.readyState === WebSocket.OPEN) {
                 return;
             }
             
             try {
-                // MEXC WebSocket для СПОТОВОЙ торговли
-                // wss://wbs-api.mexc.com/ws - используется для спотовой торговли (spot market)
-                mexcWS = new WebSocket('wss://wbs-api.mexc.com/ws');
+                wsConnections.mexc = new WebSocket('wss://wbs-api.mexc.com/ws');
                 
-                mexcWS.onopen = () => {
+                wsConnections.mexc.onopen = () => {
                     console.log('✅ MEXC WebSocket connected');
                     connectionStatus.mexc = true;
                     updateStatusBar();
                     
-                    // MEXC официальный формат подписки согласно документации
-                    // https://mxcdevelop.github.io/apidocs/spot_v3_en/#websocket-market-data
                     COINS.forEach(coin => {
-                        // Официальный формат: sub.ticker для получения лучших цен
                         const subscribeMsg = {
                             method: 'sub.ticker',
-                            param: {
-                                symbol: coin.toLowerCase() // MEXC требует lowercase
-                            }
+                            param: { symbol: coin.toLowerCase() }
                         };
-                        mexcWS.send(JSON.stringify(subscribeMsg));
-                        console.log(`MEXC: Subscribed to ${coin} ticker`);
+                        wsConnections.mexc.send(JSON.stringify(subscribeMsg));
                     });
                 };
                 
-                mexcWS.onmessage = (event) => {
+                wsConnections.mexc.onmessage = (event) => {
                     try {
                         const data = JSON.parse(event.data);
-                        
-                        // MEXC официальный формат ответа согласно документации:
-                        // {c: "BTCUSDT", d: {b: "bidPrice", a: "askPrice"}}
-                        // где c = symbol, d = data, b = bid, a = ask
                         if (data.c && data.d && data.d.b && data.d.a) {
                             const symbol = data.c.toUpperCase();
                             if (COINS.includes(symbol)) {
                                 const bid = parseFloat(data.d.b);
                                 const ask = parseFloat(data.d.a);
-                                
                                 if (!isNaN(bid) && !isNaN(ask) && bid > 0 && ask > 0) {
                                     prices.mexc[symbol] = {
                                         bid: bid,
                                         ask: ask,
                                         timestamp: Date.now()
                                     };
-                                    console.log(`✅ MEXC WebSocket: ${symbol} bid=${bid} ask=${ask}`);
                                     updateArbitrageData();
-                                } else {
-                                    console.warn(`MEXC: Invalid prices for ${symbol}: bid=${bid}, ask=${ask}`);
                                 }
-                            }
-                        } else {
-                            // Логируем только нестандартные сообщения (не ticker)
-                            if (data.channel || data.method) {
-                                console.log('MEXC WebSocket message (non-ticker):', data);
                             }
                         }
                     } catch (error) {
-                        console.error('MEXC message parse error:', error, event.data);
+                        console.error('MEXC message parse error:', error);
                     }
                 };
                 
-                mexcWS.onerror = (error) => {
-                    console.error('MEXC WebSocket error:', error);
+                wsConnections.mexc.onerror = () => {
                     connectionStatus.mexc = false;
                     updateStatusBar();
                 };
                 
-                mexcWS.onclose = () => {
-                    console.log('MEXC WebSocket closed, reconnecting...');
+                wsConnections.mexc.onclose = () => {
                     connectionStatus.mexc = false;
                     updateStatusBar();
                     setTimeout(initMexcWebSocket, 5000);
@@ -441,6 +435,85 @@
                 connectionStatus.mexc = false;
                 updateStatusBar();
             }
+        }
+        
+        // Инициализация WebSocket для всех остальных бирж
+        // OKX, KuCoin, Bitget, Huobi, Bitfinex, BingX, Coinbase
+        function initAllOtherWebSockets() {
+            // OKX WebSocket
+            try {
+                wsConnections.okx = new WebSocket('wss://ws.okx.com:8443/ws/v5/public');
+                wsConnections.okx.onopen = () => {
+                    connectionStatus.okx = true;
+                    updateStatusBar();
+                    wsConnections.okx.send(JSON.stringify({
+                        op: 'subscribe',
+                        args: COINS.map(coin => ({ channel: 'tickers', instId: coin }))
+                    }));
+                };
+                wsConnections.okx.onmessage = (e) => {
+                    try {
+                        const data = JSON.parse(e.data);
+                        if (data.data && data.data.length > 0) {
+                            const ticker = data.data[0];
+                            if (COINS.includes(ticker.instId)) {
+                                prices.okx[ticker.instId] = {
+                                    bid: parseFloat(ticker.bidPx),
+                                    ask: parseFloat(ticker.askPx),
+                                    timestamp: Date.now()
+                                };
+                                updateArbitrageData();
+                            }
+                        }
+                    } catch (err) {}
+                };
+                wsConnections.okx.onerror = () => { connectionStatus.okx = false; updateStatusBar(); };
+                wsConnections.okx.onclose = () => { connectionStatus.okx = false; updateStatusBar(); setTimeout(() => initAllOtherWebSockets(), 5000); };
+            } catch (err) { connectionStatus.okx = false; }
+            
+            // KuCoin WebSocket
+            try {
+                fetch('https://api.kucoin.com/api/v1/bullet-public', { method: 'POST' })
+                    .then(r => r.json())
+                    .then(d => {
+                        if (d.data && d.data.token) {
+                            wsConnections.kucoin = new WebSocket(`${d.data.instanceServers[0].endpoint}?token=${d.data.token}&connectId=${Date.now()}`);
+                            wsConnections.kucoin.onopen = () => {
+                                connectionStatus.kucoin = true;
+                                updateStatusBar();
+                                COINS.forEach(coin => {
+                                    wsConnections.kucoin.send(JSON.stringify({
+                                        id: Date.now(),
+                                        type: 'subscribe',
+                                        topic: `/market/ticker:${coin}`,
+                                        privateChannel: false
+                                    }));
+                                });
+                            };
+                            wsConnections.kucoin.onmessage = (e) => {
+                                try {
+                                    const data = JSON.parse(e.data);
+                                    if (data.data && data.data.bestBid && data.data.bestAsk) {
+                                        const symbol = data.topic.split(':')[1];
+                                        if (COINS.includes(symbol)) {
+                                            prices.kucoin[symbol] = {
+                                                bid: parseFloat(data.data.bestBid),
+                                                ask: parseFloat(data.data.bestAsk),
+                                                timestamp: Date.now()
+                                            };
+                                            updateArbitrageData();
+                                        }
+                                    }
+                                } catch (err) {}
+                            };
+                            wsConnections.kucoin.onerror = () => { connectionStatus.kucoin = false; updateStatusBar(); };
+                            wsConnections.kucoin.onclose = () => { connectionStatus.kucoin = false; updateStatusBar(); };
+                        }
+                    });
+            } catch (err) { connectionStatus.kucoin = false; }
+            
+            // Остальные биржи (Bitget, Huobi, Bitfinex, BingX, Coinbase) - упрощенная реализация
+            // Можно добавить позже при необходимости
         }
         
         // Обновление статус-бара
@@ -495,41 +568,36 @@
         // Обновление данных арбитража (вызывается при получении новых данных через WebSocket)
         function updateArbitrageData() {
             const results = [];
-            
-            // Используем данные из WebSocket
-            console.log('=== updateArbitrageData ===');
-            console.log('Binance:', Object.keys(prices.binance));
-            console.log('Bybit:', Object.keys(prices.bybit));
-            console.log('MEXC:', Object.keys(prices.mexc));
+            const exchangeNames = ['binance', 'okx', 'bybit', 'kucoin', 'mexc', 'bitget', 'huobi', 'bitfinex', 'bingx', 'coinbase'];
             
             for (const coin of COINS) {
-                const binance = prices.binance[coin] || null;
-                const bybit = prices.bybit[coin] || null;
-                const mexc = prices.mexc[coin] || null;
-                
-                if (coin === 'BTCUSDT') {
-                    console.log(`BTCUSDT - Binance: ${!!binance}, Bybit: ${!!bybit}, MEXC: ${!!mexc}`);
-                }
-                
-                // Нужно минимум 2 биржи для расчета арбитража
+                // Собираем все доступные биржи с данными для этой монеты
                 const exchanges = [];
-                if (binance) exchanges.push({name: 'Binance', data: binance, fee: BINANCE_TRADE_FEE});
-                if (bybit) exchanges.push({name: 'Bybit', data: bybit, fee: BYBIT_TRADE_FEE});
-                if (mexc) exchanges.push({name: 'MEXC', data: mexc, fee: MEXC_TRADE_FEE});
+                exchangeNames.forEach(exchangeName => {
+                    const priceData = prices[exchangeName][coin];
+                    if (priceData) {
+                        exchanges.push({
+                            name: exchangeName.charAt(0).toUpperCase() + exchangeName.slice(1),
+                            data: priceData,
+                            fee: TRADE_FEES[exchangeName]
+                        });
+                    }
+                });
                 
                 if (exchanges.length < 2) {
-                    continue; // Пропускаем, если данных недостаточно
+                    continue; // Нужно минимум 2 биржи
                 }
                 
                 const withdrawFee = getWithdrawFee(coin);
                 
-                // Рассчитываем все возможные сценарии арбитража между биржами
+                // Рассчитываем все возможные сценарии арбитража
                 let maxProfit = -Infinity;
                 let bestScenario = null;
+                let allPrices = {};
                 
                 for (let i = 0; i < exchanges.length; i++) {
                     for (let j = 0; j < exchanges.length; j++) {
-                        if (i === j) continue; // Пропускаем одинаковые биржи
+                        if (i === j) continue;
                         
                         const buyExchange = exchanges[i];
                         const sellExchange = exchanges[j];
@@ -551,55 +619,54 @@
                     }
                 }
                 
+                // Сохраняем все цены для отображения
+                exchanges.forEach(ex => {
+                    allPrices[ex.name.toLowerCase()] = ex.data;
+                });
+                
                 if (bestScenario) {
                     results.push({
                         coin: coin,
                         maxProfit: maxProfit,
                         bestScenario: bestScenario,
-                        binance: binance,
-                        bybit: bybit,
-                        mexc: mexc
+                        prices: allPrices
                     });
                 }
             }
             
-            // Сортируем по прибыли (от большей к меньшей)
+            // Сортируем по прибыли (от большей к меньшей) и показываем только ТОП-10 лучших
             results.sort((a, b) => b.maxProfit - a.maxProfit);
+            const topResults = results.slice(0, 10); // Только лучшие 10 возможностей
             
-            if (results.length === 0) {
+            if (topResults.length === 0) {
                 const connected = Object.values(connectionStatus).filter(s => s).length;
-                const totalPrices = Object.keys(prices.binance).length + 
-                                   Object.keys(prices.bybit).length + 
-                                   Object.keys(prices.mexc).length;
-                
                 if (connected === 0) {
                     contentDiv.innerHTML = '<div class="error">Ожидание подключения к биржам...</div>';
-                } else if (totalPrices === 0) {
-                    contentDiv.innerHTML = '<div class="loading">Ожидание данных с бирж... (данные приходят в реальном времени через WebSocket)</div>';
                 } else {
-                    // Есть данные, но недостаточно для расчета арбитража (нужно минимум 2 биржи для каждой монеты)
-                    let missingInfo = [];
-                    for (const coin of COINS) {
-                        const hasBinance = !!prices.binance[coin];
-                        const hasBybit = !!prices.bybit[coin];
-                        const hasMexc = !!prices.mexc[coin];
-                        const count = (hasBinance ? 1 : 0) + (hasBybit ? 1 : 0) + (hasMexc ? 1 : 0);
-                        if (count < 2) {
-                            missingInfo.push(`${coin}: ${count}/3 бирж`);
-                        }
-                    }
-                    contentDiv.innerHTML = `<div class="loading">Собираем данные...<br><small>${missingInfo.join(', ')}</small></div>`;
+                    contentDiv.innerHTML = '<div class="loading">Ожидание данных с бирж... (данные приходят в реальном времени через WebSocket)</div>';
                 }
                 return;
             }
             
-            // Отображаем результаты
+            // Отображаем только ТОП лучшие возможности
             let html = '<div class="arbitrage-list">';
             
-            for (const result of results) {
+            for (const result of topResults) {
                 const isPositive = result.maxProfit >= 0;
                 const scenario = result.bestScenario;
                 const scenarioText = `${scenario.buyExchange} → ${scenario.sellExchange} (${formatNumber(scenario.profit)} USDT)`;
+                
+                // Формируем список всех доступных цен для этой монеты
+                let exchangesHtml = '';
+                Object.keys(result.prices).forEach(exchangeName => {
+                    const priceData = result.prices[exchangeName];
+                    const displayName = exchangeName.charAt(0).toUpperCase() + exchangeName.slice(1);
+                    exchangesHtml += `
+                        <div class="exchange-row">
+                            <span class="exchange-label">${displayName}:</span>
+                            <span class="exchange-value">Покупка ${formatNumber(priceData.ask)} | Продажа ${formatNumber(priceData.bid)}</span>
+                        </div>`;
+                });
                 
                 html += `
                     <div class="arbitrage-item ${isPositive ? 'positive' : 'negative'}">
@@ -610,24 +677,10 @@
                             </div>
                         </div>
                         <div class="exchanges-info">
-                            ${result.binance ? `
-                            <div class="exchange-row">
-                                <span class="exchange-label">Binance:</span>
-                                <span class="exchange-value">Покупка ${formatNumber(result.binance.ask)} | Продажа ${formatNumber(result.binance.bid)}</span>
-                            </div>` : ''}
-                            ${result.bybit ? `
-                            <div class="exchange-row">
-                                <span class="exchange-label">Bybit:</span>
-                                <span class="exchange-value">Покупка ${formatNumber(result.bybit.ask)} | Продажа ${formatNumber(result.bybit.bid)}</span>
-                            </div>` : ''}
-                            ${result.mexc ? `
-                            <div class="exchange-row">
-                                <span class="exchange-label">MEXC:</span>
-                                <span class="exchange-value">Покупка ${formatNumber(result.mexc.ask)} | Продажа ${formatNumber(result.mexc.bid)}</span>
-                            </div>` : ''}
+                            ${exchangesHtml}
                         </div>
                         <div class="scenario-info">
-                            <div class="scenario-text">💡 Лучший сценарий из всех бирж: ${scenarioText}</div>
+                            <div class="scenario-text">💡 Лучший сценарий: ${scenarioText}</div>
                         </div>
                     </div>
                 `;
@@ -636,40 +689,40 @@
             html += '</div>';
             
             // Добавляем информацию о количестве найденных возможностей
-            if (results.length > 0) {
-                const positiveCount = results.filter(r => r.maxProfit >= 0).length;
-                html = `<div style="text-align: center; margin-bottom: 15px; color: var(--tg-theme-hint-color, #999999); font-size: 14px;">
-                    📊 Найдено ${results.length} монет | ${positiveCount} с прибылью | Сортировка: по прибыли (↓)
-                </div>` + html;
-            }
+            const positiveCount = topResults.filter(r => r.maxProfit >= 0).length;
+            html = `<div style="text-align: center; margin-bottom: 15px; color: var(--tg-theme-hint-color, #999999); font-size: 14px;">
+                🏆 ТОП-${topResults.length} лучших возможностей | ${positiveCount} с прибылью | Сортировка: по прибыли (↓)
+            </div>` + html;
             
             contentDiv.innerHTML = html;
         }
         
         refreshButton.onclick = () => {
             // Закрываем все соединения
-            if (binanceWS) binanceWS.close();
-            if (bybitWS) bybitWS.close();
-            if (mexcWS) mexcWS.close();
+            Object.keys(wsConnections).forEach(key => {
+                if (wsConnections[key]) wsConnections[key].close();
+            });
             
             // Очищаем кэш цен
-            prices.binance = {};
-            prices.bybit = {};
-            prices.mexc = {};
+            Object.keys(prices).forEach(key => {
+                prices[key] = {};
+            });
             
             // Сбрасываем статус
-            connectionStatus.binance = false;
-            connectionStatus.bybit = false;
-            connectionStatus.mexc = false;
+            Object.keys(connectionStatus).forEach(key => {
+                connectionStatus[key] = false;
+            });
             
             // Переподключаемся
             contentDiv.innerHTML = '<div class="loading">Переподключение к биржам...</div>';
             updateStatusBar();
             
             setTimeout(() => {
+                loadInitialData();
                 initBinanceWebSocket();
                 initBybitWebSocket();
                 initMexcWebSocket();
+                initAllOtherWebSockets();
             }, 1000);
         };
         
@@ -790,6 +843,7 @@
             initBinanceWebSocket();
             initBybitWebSocket();
             initMexcWebSocket();
+            initAllOtherWebSockets();
         }, 500);
     </script>
 </body>
