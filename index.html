@@ -368,81 +368,51 @@
                     connectionStatus.mexc = true;
                     updateStatusBar();
                     
-                    // MEXC WebSocket подписка - пробуем разные форматы
+                    // MEXC официальный формат подписки согласно документации
+                    // https://mxcdevelop.github.io/apidocs/spot_v3_en/#websocket-market-data
                     COINS.forEach(coin => {
-                        // Формат 1: sub.ticker
-                        const subscribeMsg1 = {
+                        // Официальный формат: sub.ticker для получения лучших цен
+                        const subscribeMsg = {
                             method: 'sub.ticker',
                             param: {
-                                symbol: coin.toLowerCase()
+                                symbol: coin.toLowerCase() // MEXC требует lowercase
                             }
                         };
-                        mexcWS.send(JSON.stringify(subscribeMsg1));
-                        
-                        // Формат 2: sub.depth (orderbook)
-                        const subscribeMsg2 = {
-                            method: 'sub.depth',
-                            param: {
-                                symbol: coin.toLowerCase(),
-                                limit: 1
-                            }
-                        };
-                        mexcWS.send(JSON.stringify(subscribeMsg2));
+                        mexcWS.send(JSON.stringify(subscribeMsg));
+                        console.log(`MEXC: Subscribed to ${coin} ticker`);
                     });
                 };
                 
                 mexcWS.onmessage = (event) => {
                     try {
                         const data = JSON.parse(event.data);
-                        console.log('MEXC WebSocket message:', data);
                         
-                        // Обработка разных форматов MEXC
-                        let symbol = null;
-                        let bid = null;
-                        let ask = null;
-                        
-                        // Формат 1: {c: "btcusdt", d: {b: "bid", a: "ask"}}
-                        if (data.c && data.d) {
-                            symbol = data.c.toUpperCase();
-                            if (data.d.b && data.d.a) {
-                                bid = parseFloat(data.d.b);
-                                ask = parseFloat(data.d.a);
+                        // MEXC официальный формат ответа согласно документации:
+                        // {c: "BTCUSDT", d: {b: "bidPrice", a: "askPrice"}}
+                        // где c = symbol, d = data, b = bid, a = ask
+                        if (data.c && data.d && data.d.b && data.d.a) {
+                            const symbol = data.c.toUpperCase();
+                            if (COINS.includes(symbol)) {
+                                const bid = parseFloat(data.d.b);
+                                const ask = parseFloat(data.d.a);
+                                
+                                if (!isNaN(bid) && !isNaN(ask) && bid > 0 && ask > 0) {
+                                    prices.mexc[symbol] = {
+                                        bid: bid,
+                                        ask: ask,
+                                        timestamp: Date.now()
+                                    };
+                                    console.log(`✅ MEXC WebSocket: ${symbol} bid=${bid} ask=${ask}`);
+                                    updateArbitrageData();
+                                } else {
+                                    console.warn(`MEXC: Invalid prices for ${symbol}: bid=${bid}, ask=${ask}`);
+                                }
                             }
-                        }
-                        // Формат 2: {channel: "spot@ticker@btcusdt", data: {bid: "...", ask: "..."}}
-                        else if (data.channel && data.channel.startsWith('spot@ticker@')) {
-                            symbol = data.channel.replace('spot@ticker@', '').toUpperCase();
-                            if (data.data && data.data.bid && data.data.ask) {
-                                bid = parseFloat(data.data.bid);
-                                ask = parseFloat(data.data.ask);
+                        } else {
+                            // Логируем только нестандартные сообщения (не ticker)
+                            if (data.channel || data.method) {
+                                console.log('MEXC WebSocket message (non-ticker):', data);
                             }
-                        }
-                        // Формат 3: {symbol: "BTCUSDT", bid: "...", ask: "..."}
-                        else if (data.symbol) {
-                            symbol = data.symbol.toUpperCase();
-                            if (data.bid && data.ask) {
-                                bid = parseFloat(data.bid);
-                                ask = parseFloat(data.ask);
-                            }
-                        }
-                        // Формат 4: depth (orderbook)
-                        else if (data.channel && data.channel.includes('@depth@')) {
-                            symbol = data.channel.split('@')[2].toUpperCase();
-                            if (data.data && data.data.bids && data.data.asks && 
-                                data.data.bids.length > 0 && data.data.asks.length > 0) {
-                                bid = parseFloat(data.data.bids[0][0]);
-                                ask = parseFloat(data.data.asks[0][0]);
-                            }
-                        }
-                        
-                        if (symbol && COINS.includes(symbol) && bid && ask && !isNaN(bid) && !isNaN(ask)) {
-                            prices.mexc[symbol] = {
-                                bid: bid,
-                                ask: ask,
-                                timestamp: Date.now()
-                            };
-                            console.log(`✅ MEXC WebSocket: ${symbol} bid=${bid} ask=${ask}`);
-                            updateArbitrageData();
                         }
                     } catch (error) {
                         console.error('MEXC message parse error:', error, event.data);
@@ -725,6 +695,8 @@
                                 return null;
                             })
                             .catch(() => null),
+                        // MEXC официальный REST API согласно документации:
+                        // https://mxcdevelop.github.io/apidocs/spot_v3_en/#24hr-ticker-price-change-statistics
                         fetch(`https://api.mexc.com/api/v3/ticker/bookTicker?symbol=${coin}`)
                             .then(r => {
                                 if (!r.ok) {
@@ -735,52 +707,27 @@
                             })
                             .then(d => {
                                 if (!d) return null;
-                                console.log(`MEXC REST response for ${coin}:`, d);
                                 
-                                // MEXC может возвращать данные в разных форматах
-                                let bid, ask;
-                                
+                                // MEXC официальный формат ответа: {bidPrice: "...", askPrice: "..."}
                                 if (d.bidPrice && d.askPrice) {
-                                    // Формат 1: {bidPrice: "...", askPrice: "..."}
-                                    bid = parseFloat(d.bidPrice);
-                                    ask = parseFloat(d.askPrice);
-                                } else if (d.bid && d.ask) {
-                                    // Формат 2: {bid: "...", ask: "..."}
-                                    bid = parseFloat(d.bid);
-                                    ask = parseFloat(d.ask);
-                                } else if (d.bestBid && d.bestAsk) {
-                                    // Формат 3: {bestBid: "...", bestAsk: "..."}
-                                    bid = parseFloat(d.bestBid);
-                                    ask = parseFloat(d.bestAsk);
+                                    const bid = parseFloat(d.bidPrice);
+                                    const ask = parseFloat(d.askPrice);
+                                    
+                                    if (!isNaN(bid) && !isNaN(ask) && bid > 0 && ask > 0) {
+                                        console.log(`✅ MEXC REST ${coin}: bid=${bid}, ask=${ask}`);
+                                        return { bid, ask };
+                                    } else {
+                                        console.error(`MEXC REST: invalid prices for ${coin}: bid=${bid}, ask=${ask}`);
+                                        return null;
+                                    }
                                 } else {
-                                    console.error(`MEXC REST: unknown format for ${coin}:`, d);
+                                    console.error(`MEXC REST: missing bidPrice/askPrice for ${coin}:`, d);
                                     return null;
                                 }
-                                
-                                if (isNaN(bid) || isNaN(ask) || bid <= 0 || ask <= 0) {
-                                    console.error(`MEXC REST: invalid prices for ${coin}: bid=${bid}, ask=${ask}`);
-                                    return null;
-                                }
-                                
-                                console.log(`✅ MEXC ${coin} parsed: bid=${bid}, ask=${ask}`);
-                                return { bid, ask };
                             })
                             .catch(err => {
                                 console.error(`MEXC REST API error for ${coin}:`, err);
-                                // Пробуем альтернативный endpoint как fallback
-                                return fetch(`https://www.mexc.com/open/api/v2/market/ticker?symbol=${coin}`)
-                                    .then(r => r.ok ? r.json() : null)
-                                    .then(d => {
-                                        if (d && d.data && d.data.bid && d.data.ask) {
-                                            console.log(`✅ MEXC v2 fallback for ${coin}:`, d);
-                                            return {
-                                                bid: parseFloat(d.data.bid),
-                                                ask: parseFloat(d.data.ask)
-                                            };
-                                        }
-                                        return null;
-                                    })
-                                    .catch(() => null);
+                                return null;
                             })
                     ]);
                     
