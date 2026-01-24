@@ -480,55 +480,73 @@
                 } catch (err) { connectionStatus.okx = false; updateStatusBar(); }
             }
             
-            // KuCoin WebSocket
+            // KuCoin WebSocket - используем публичный endpoint без токена
+            // KuCoin блокирует запросы к bullet-public с 403, используем альтернативный метод
             if (!wsConnections.kucoin || wsConnections.kucoin.readyState !== WebSocket.OPEN) {
                 try {
-                    fetch('https://api.kucoin.com/api/v1/bullet-public', { method: 'POST' })
-                        .then(r => r.json())
-                        .then(d => {
-                            if (d.data && d.data.token) {
-                                wsConnections.kucoin = new WebSocket(`${d.data.instanceServers[0].endpoint}?token=${d.data.token}&connectId=${Date.now()}`);
-                                wsConnections.kucoin.onopen = () => {
-                                    console.log('✅ KuCoin WebSocket connected');
-                                    connectionStatus.kucoin = true;
-                                    updateStatusBar();
-                                    COINS.forEach(coin => {
-                                        wsConnections.kucoin.send(JSON.stringify({
-                                            id: Date.now(),
-                                            type: 'subscribe',
-                                            topic: `/market/ticker:${coin}`,
-                                            privateChannel: false
-                                        }));
-                                    });
-                                };
-                                wsConnections.kucoin.onmessage = (e) => {
-                                    try {
-                                        const data = JSON.parse(e.data);
-                                        // KuCoin отправляет ping/pong, пропускаем
-                                        if (data.type === 'pong' || data.type === 'ack') return;
-                                        
-                                        if (data.data && data.data.bestBid && data.data.bestAsk) {
-                                            const symbol = data.topic?.split(':')[1];
-                                            if (symbol && COINS.includes(symbol)) {
-                                                prices.kucoin[symbol] = {
-                                                    bid: parseFloat(data.data.bestBid),
-                                                    ask: parseFloat(data.data.bestAsk),
-                                                    timestamp: Date.now()
-                                                };
-                                                console.log(`KuCoin: ${symbol} bid=${data.data.bestBid} ask=${data.data.bestAsk}`);
-                                                updateArbitrageData();
-                                            }
-                                        }
-                                    } catch (err) {
-                                        console.error('KuCoin message parse error:', err);
-                                    }
-                                };
-                                wsConnections.kucoin.onerror = () => { connectionStatus.kucoin = false; updateStatusBar(); };
-                                wsConnections.kucoin.onclose = () => { connectionStatus.kucoin = false; updateStatusBar(); setTimeout(() => initAllOtherWebSockets(), 5000); };
+                    // Пробуем использовать публичный WebSocket без токена
+                    // KuCoin публичный WebSocket: wss://ws-api-spot.kucoin.com/
+                    const kucoinWS = new WebSocket('wss://ws-api-spot.kucoin.com/');
+                    
+                    kucoinWS.onopen = () => {
+                        console.log('✅ KuCoin WebSocket connected (public)');
+                        connectionStatus.kucoin = true;
+                        updateStatusBar();
+                        
+                        // Подписываемся на ticker для всех монет
+                        COINS.forEach(coin => {
+                            kucoinWS.send(JSON.stringify({
+                                id: Date.now(),
+                                type: 'subscribe',
+                                topic: `/market/ticker:${coin}`,
+                                privateChannel: false,
+                                response: true
+                            }));
+                        });
+                    };
+                    
+                    kucoinWS.onmessage = (e) => {
+                        try {
+                            const data = JSON.parse(e.data);
+                            // KuCoin отправляет ping/pong, пропускаем
+                            if (data.type === 'pong' || data.type === 'ack' || data.type === 'welcome') return;
+                            
+                            if (data.data && data.data.bestBid && data.data.bestAsk) {
+                                const symbol = data.topic?.split(':')[1];
+                                if (symbol && COINS.includes(symbol)) {
+                                    prices.kucoin[symbol] = {
+                                        bid: parseFloat(data.data.bestBid),
+                                        ask: parseFloat(data.data.bestAsk),
+                                        timestamp: Date.now()
+                                    };
+                                    console.log(`KuCoin: ${symbol} bid=${data.data.bestBid} ask=${data.data.bestAsk}`);
+                                    updateArbitrageData();
+                                }
                             }
-                        })
-                        .catch(() => { connectionStatus.kucoin = false; updateStatusBar(); });
-                } catch (err) { connectionStatus.kucoin = false; updateStatusBar(); }
+                        } catch (err) {
+                            console.error('KuCoin message parse error:', err);
+                        }
+                    };
+                    
+                    kucoinWS.onerror = (err) => {
+                        console.error('KuCoin WebSocket error:', err);
+                        connectionStatus.kucoin = false;
+                        updateStatusBar();
+                    };
+                    
+                    kucoinWS.onclose = () => {
+                        console.log('KuCoin WebSocket closed');
+                        connectionStatus.kucoin = false;
+                        updateStatusBar();
+                        // Не переподключаемся автоматически, чтобы избежать спама запросов
+                    };
+                    
+                    wsConnections.kucoin = kucoinWS;
+                } catch (err) {
+                    console.error('Failed to create KuCoin WebSocket:', err);
+                    connectionStatus.kucoin = false;
+                    updateStatusBar();
+                }
             }
             
             // Bitget WebSocket
