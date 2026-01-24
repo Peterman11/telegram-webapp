@@ -1049,18 +1049,23 @@
                 return -Infinity;
             }
             
-            // Покупка
+            // Покупка: покупаем по ask цене (цена продажи биржи)
+            // amount USDT → после комиссии → делим на ask → получаем криптовалюту
             const afterBuyFee = amount * (1 - buyFee);
             const cryptoBought = afterBuyFee / buyPrice;
             const cryptoAfterWithdraw = cryptoBought - withdrawFee;
             
             if (cryptoAfterWithdraw <= 0) return -amount;
             
-            // Продажа
+            // Продажа: продаем по bid цене (цена покупки биржи)
+            // криптовалюту → умножаем на bid → после комиссии → получаем USDT
             const usdtFromSell = cryptoAfterWithdraw * sellPrice;
             const usdtAfterSellFee = usdtFromSell * (1 - sellFee);
             
-            return usdtAfterSellFee - amount;
+            // Прибыль = итоговая сумма - начальная сумма
+            const profit = usdtAfterSellFee - amount;
+            
+            return profit;
         }
         
         function formatNumber(num, decimals = 2) {
@@ -1159,11 +1164,24 @@
                         const buyExchange = exchanges[i];
                         const sellExchange = exchanges[j];
                         
+                        // ВАЖНО: покупка по ask (цена продажи биржи), продажа по bid (цена покупки биржи)
+                        const buyPrice = buyExchange.data.ask;  // Покупаем по ask
+                        const sellPrice = sellExchange.data.bid; // Продаем по bid
+                        
                         const profit = calculateProfit(
-                            buyExchange.data.ask, buyExchange.fee, withdrawFee,
-                            sellExchange.data.bid, sellExchange.fee,
+                            buyPrice, buyExchange.fee, withdrawFee,
+                            sellPrice, sellExchange.fee,
                             TRADE_AMOUNT
                         );
+                        
+                        // Детальное логирование для первых нескольких монет для проверки
+                        if (coin === 'NEARUSDT' || coin === 'STXUSDT' || coin === 'OPUSDT') {
+                            console.log(`  📊 ${coin} ${buyExchange.name}→${sellExchange.name}:`);
+                            console.log(`     Покупка: ${buyPrice} (ask на ${buyExchange.name}), комиссия: ${(buyExchange.fee * 100).toFixed(2)}%`);
+                            console.log(`     Продажа: ${sellPrice} (bid на ${sellExchange.name}), комиссия: ${(sellExchange.fee * 100).toFixed(2)}%`);
+                            console.log(`     Объем: ${TRADE_AMOUNT} USDT`);
+                            console.log(`     Прибыль: ${profit.toFixed(4)} USDT`);
+                        }
                         
                         if (profit > maxProfit) {
                             maxProfit = profit;
