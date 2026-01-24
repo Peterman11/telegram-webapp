@@ -488,10 +488,19 @@
             const results = [];
             
             // Используем данные из WebSocket
+            console.log('=== updateArbitrageData ===');
+            console.log('Binance:', Object.keys(prices.binance));
+            console.log('Bybit:', Object.keys(prices.bybit));
+            console.log('MEXC:', Object.keys(prices.mexc));
+            
             for (const coin of COINS) {
                 const binance = prices.binance[coin] || null;
                 const bybit = prices.bybit[coin] || null;
                 const mexc = prices.mexc[coin] || null;
+                
+                if (coin === 'BTCUSDT') {
+                    console.log(`BTCUSDT - Binance: ${!!binance}, Bybit: ${!!bybit}, MEXC: ${!!mexc}`);
+                }
                 
                 // Нужно минимум 2 биржи для расчета арбитража
                 const exchanges = [];
