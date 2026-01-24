@@ -929,10 +929,17 @@
             
             if (topResults.length === 0) {
                 const connected = Object.values(connectionStatus).filter(s => s).length;
-                if (connected === 0) {
-                    contentDiv.innerHTML = '<div class="error">Ожидание подключения к биржам...</div>';
+                const totalExchanges = Object.keys(connectionStatus).length;
+                const totalPrices = Object.values(prices).reduce((sum, p) => sum + Object.keys(p).length, 0);
+                
+                console.warn(`⚠️ Нет результатов арбитража. Подключено: ${connected}/${totalExchanges} бирж, Всего цен: ${totalPrices}`);
+                
+                if (connected === 0 && totalPrices === 0) {
+                    contentDiv.innerHTML = '<div class="error">Ожидание подключения к биржам...<br>Проверьте консоль для деталей.</div>';
+                } else if (totalPrices === 0) {
+                    contentDiv.innerHTML = '<div class="loading">Ожидание данных с бирж...<br>Проверьте консоль для деталей.</div>';
                 } else {
-                    contentDiv.innerHTML = '<div class="loading">Ожидание данных с бирж... (данные приходят в реальном времени через WebSocket)</div>';
+                    contentDiv.innerHTML = `<div class="loading">Недостаточно данных для расчета арбитража.<br>Получено цен: ${totalPrices}, нужно минимум 2 биржи для каждой монеты.<br>Проверьте консоль для деталей.</div>`;
                 }
                 return;
             }
@@ -1212,14 +1219,27 @@
                             }),
                         // Coinbase (использует формат BTC-USDT)
                         fetch(`https://api.exchange.coinbase.com/products/${coin.replace('USDT', '-USDT')}/ticker`)
-                            .then(r => r.json())
+                            .then(r => {
+                                if (!r.ok) {
+                                    console.error(`Coinbase REST error for ${coin}: HTTP ${r.status}`);
+                                    return null;
+                                }
+                                return r.json();
+                            })
                             .then(d => {
-                                if (d.bid && d.ask) {
-                                    return { bid: parseFloat(d.bid), ask: parseFloat(d.ask) };
+                                if (d && d.bid && d.ask) {
+                                    const bid = parseFloat(d.bid);
+                                    const ask = parseFloat(d.ask);
+                                    if (!isNaN(bid) && !isNaN(ask) && bid > 0 && ask > 0) {
+                                        return { bid, ask };
+                                    }
                                 }
                                 return null;
                             })
-                            .catch(() => null)
+                            .catch(err => {
+                                console.error(`Coinbase REST error for ${coin}:`, err);
+                                return null;
+                            })
                     ]);
                     
                     // Сохраняем данные для каждой биржи
@@ -1250,18 +1270,39 @@
                 }
             }
             
-            console.log('Initial data loaded for all exchanges and all coins, updating arbitrage...');
+            console.log('✅ Начальные данные загружены для всех бирж и всех монет');
+            console.log('📊 Текущее состояние цен:');
+            Object.keys(prices).forEach(exchangeName => {
+                const coinCount = Object.keys(prices[exchangeName]).length;
+                if (coinCount > 0) {
+                    console.log(`  ${exchangeName}: ${coinCount} монет`);
+                    Object.keys(prices[exchangeName]).forEach(coin => {
+                        const priceData = prices[exchangeName][coin];
+                        console.log(`    ${coin}: bid=${priceData.bid} ask=${priceData.ask}`);
+                    });
+                } else {
+                    console.log(`  ${exchangeName}: нет данных`);
+                }
+            });
+            console.log('🔄 Обновляем данные арбитража...');
             updateArbitrageData();
         }
         
         // Инициализируем WebSocket соединения при загрузке
+        console.log('🚀 Инициализация приложения...');
+        console.log('📋 Поддерживаемые монеты:', COINS);
         updateStatusBar();
         
         // Загружаем начальные данные через REST API (чтобы сразу показать список)
-        loadInitialData();
+        console.log('📥 Начинаем загрузку начальных данных через REST API...');
+        loadInitialData().catch(err => {
+            console.error('❌ Критическая ошибка при загрузке начальных данных:', err);
+            contentDiv.innerHTML = '<div class="error">Ошибка загрузки данных. Проверьте консоль для деталей.</div>';
+        });
         
         // Подключаемся через WebSocket для обновлений в реальном времени
         setTimeout(() => {
+            console.log('🔌 Инициализация WebSocket подключений...');
             initBinanceWebSocket();
             initBybitWebSocket();
             initMexcWebSocket();
