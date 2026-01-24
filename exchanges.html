@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Выбор бирж</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--tg-theme-bg-color, #ffffff);
+            color: var(--tg-theme-text-color, #000000);
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            font-size: 24px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .exchange-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        
+        .exchange-item {
+            background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+            border-radius: 12px;
+            padding: 16px;
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+        
+        .exchange-item:active {
+            opacity: 0.7;
+        }
+        
+        .exchange-item.selected {
+            background: var(--tg-theme-button-color, #3390ec);
+            color: var(--tg-theme-button-text-color, #ffffff);
+        }
+        
+        .checkbox {
+            width: 24px;
+            height: 24px;
+            border: 2px solid var(--tg-theme-text-color, #000000);
+            border-radius: 4px;
+            margin-right: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .exchange-item.selected .checkbox {
+            border-color: var(--tg-theme-button-text-color, #ffffff);
+        }
+        
+        .checkbox::after {
+            content: '✓';
+            display: none;
+            color: var(--tg-theme-button-text-color, #ffffff);
+            font-weight: bold;
+        }
+        
+        .exchange-item.selected .checkbox::after {
+            display: block;
+        }
+        
+        .exchange-name {
+            font-size: 16px;
+            font-weight: 600;
+        }
+        
+        .submit-button {
+            width: 100%;
+            background: var(--tg-theme-button-color, #3390ec);
+            color: var(--tg-theme-button-text-color, #ffffff);
+            border: none;
+            border-radius: 12px;
+            padding: 16px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        
+        .submit-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Выбери биржи</h1>
+        <div class="exchange-list" id="exchangeList"></div>
+        <button class="submit-button" id="submitButton" disabled>Выбрать</button>
+    </div>
+    
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+        
+        const exchanges = ['Binance', 'Bybit'];
+        const selectedExchanges = new Set();
+        
+        const exchangeList = document.getElementById('exchangeList');
+        const submitButton = document.getElementById('submitButton');
+        
+        // Создаем список бирж
+        exchanges.forEach(exchange => {
+            const item = document.createElement('div');
+            item.className = 'exchange-item';
+            item.innerHTML = `
+                <div class="checkbox"></div>
+                <div class="exchange-name">${exchange}</div>
+            `;
+            item.onclick = () => {
+                if (selectedExchanges.has(exchange)) {
+                    selectedExchanges.delete(exchange);
+                    item.classList.remove('selected');
+                } else {
+                    selectedExchanges.add(exchange);
+                    item.classList.add('selected');
+                }
+                submitButton.disabled = selectedExchanges.size === 0;
+            };
+            exchangeList.appendChild(item);
+        });
+        
+        // Обработка отправки
+        submitButton.onclick = () => {
+            if (selectedExchanges.size > 0) {
+                const data = {
+                    type: 'exchanges',
+                    exchanges: Array.from(selectedExchanges)
+                };
+                tg.sendData(JSON.stringify(data));
+                tg.close();
+            }
+        };
+    </script>
+</body>
+</html>
+
