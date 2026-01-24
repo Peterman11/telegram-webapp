@@ -549,10 +549,10 @@
                 }
             }
             
-            // Bitget WebSocket
+            // Bitget WebSocket - используем правильный публичный endpoint
             if (!wsConnections.bitget || wsConnections.bitget.readyState !== WebSocket.OPEN) {
                 try {
-                    wsConnections.bitget = new WebSocket('wss://ws.bitget.com/spot/v1/stream');
+                    wsConnections.bitget = new WebSocket('wss://ws.bitget.com/v2/ws/public');
                     wsConnections.bitget.onopen = () => {
                         console.log('✅ Bitget WebSocket connected');
                         connectionStatus.bitget = true;
@@ -568,7 +568,7 @@
                         try {
                             const data = JSON.parse(e.data);
                             // Bitget отправляет события подключения
-                            if (data.event === 'subscribe' || data.event === 'login') return;
+                            if (data.event === 'subscribe' || data.event === 'login' || data.action === 'subscribe') return;
                             
                             if (data.data && data.data.bestBid && data.data.bestAsk) {
                                 const symbol = data.arg?.replace('spot/ticker:', '');
@@ -587,8 +587,12 @@
                         }
                     };
                     wsConnections.bitget.onerror = () => { connectionStatus.bitget = false; updateStatusBar(); };
-                    wsConnections.bitget.onclose = () => { connectionStatus.bitget = false; updateStatusBar(); setTimeout(() => initAllOtherWebSockets(), 5000); };
-                } catch (err) { connectionStatus.bitget = false; updateStatusBar(); }
+                    wsConnections.bitget.onclose = () => { connectionStatus.bitget = false; updateStatusBar(); setTimeout(() => initAllOtherWebSockets(), 10000); };
+                } catch (err) { 
+                    console.error('Failed to create Bitget WebSocket:', err);
+                    connectionStatus.bitget = false; 
+                    updateStatusBar(); 
+                }
             }
             
             // Huobi WebSocket
