@@ -702,14 +702,34 @@
                             .then(d => {
                                 if (!d) return null;
                                 console.log(`MEXC REST response for ${coin}:`, d);
+                                
+                                // MEXC может возвращать данные в разных форматах
+                                let bid, ask;
+                                
                                 if (d.bidPrice && d.askPrice) {
-                                    return {
-                                        bid: parseFloat(d.bidPrice),
-                                        ask: parseFloat(d.askPrice)
-                                    };
+                                    // Формат 1: {bidPrice: "...", askPrice: "..."}
+                                    bid = parseFloat(d.bidPrice);
+                                    ask = parseFloat(d.askPrice);
+                                } else if (d.bid && d.ask) {
+                                    // Формат 2: {bid: "...", ask: "..."}
+                                    bid = parseFloat(d.bid);
+                                    ask = parseFloat(d.ask);
+                                } else if (d.bestBid && d.bestAsk) {
+                                    // Формат 3: {bestBid: "...", bestAsk: "..."}
+                                    bid = parseFloat(d.bestBid);
+                                    ask = parseFloat(d.bestAsk);
+                                } else {
+                                    console.error(`MEXC REST: unknown format for ${coin}:`, d);
+                                    return null;
                                 }
-                                console.error(`MEXC REST: invalid format for ${coin}:`, d);
-                                return null;
+                                
+                                if (isNaN(bid) || isNaN(ask) || bid <= 0 || ask <= 0) {
+                                    console.error(`MEXC REST: invalid prices for ${coin}: bid=${bid}, ask=${ask}`);
+                                    return null;
+                                }
+                                
+                                console.log(`✅ MEXC ${coin} parsed: bid=${bid}, ask=${ask}`);
+                                return { bid, ask };
                             })
                             .catch(err => {
                                 console.error(`MEXC REST API error for ${coin}:`, err);
