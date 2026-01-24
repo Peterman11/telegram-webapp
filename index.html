@@ -1118,14 +1118,27 @@
                             }),
                         // Bitget
                         fetch(`https://api.bitget.com/api/spot/v1/market/ticker?symbol=${coin}`)
-                            .then(r => r.json())
+                            .then(r => {
+                                if (!r.ok) {
+                                    console.error(`Bitget REST error for ${coin}: HTTP ${r.status}`);
+                                    return null;
+                                }
+                                return r.json();
+                            })
                             .then(d => {
-                                if (d.code === '00000' && d.data && d.data.bestBid && d.data.bestAsk) {
-                                    return { bid: parseFloat(d.data.bestBid), ask: parseFloat(d.data.bestAsk) };
+                                if (d && d.code === '00000' && d.data && d.data.bestBid && d.data.bestAsk) {
+                                    const bid = parseFloat(d.data.bestBid);
+                                    const ask = parseFloat(d.data.bestAsk);
+                                    if (!isNaN(bid) && !isNaN(ask) && bid > 0 && ask > 0) {
+                                        return { bid, ask };
+                                    }
                                 }
                                 return null;
                             })
-                            .catch(() => null),
+                            .catch(err => {
+                                console.error(`Bitget REST error for ${coin}:`, err);
+                                return null;
+                            }),
                         // Huobi
                         fetch(`https://api.huobi.pro/market/detail/merged?symbol=${coin.toLowerCase()}`)
                             .then(r => {
