@@ -414,10 +414,16 @@
                     connectionStatus.mexc = true;
                     updateStatusBar();
                     
+                    // MEXC использует канал spot@public.deals.v3.api для получения данных о ценах
+                    // Формат: spot@public.deals.v3.api@${symbol}
                     COINS.forEach(coin => {
+                        const symbol = coin.toLowerCase();
                         const subscribeMsg = {
-                            method: 'sub.ticker',
-                            param: { symbol: coin.toLowerCase() }
+                            method: 'sub.depth',
+                            param: {
+                                symbol: symbol,
+                                depth: 5
+                            }
                         };
                         wsConnections.mexc.send(JSON.stringify(subscribeMsg));
                     });
@@ -426,25 +432,34 @@
                 wsConnections.mexc.onmessage = (event) => {
                     try {
                         const data = JSON.parse(event.data);
-                        // Логируем все сообщения для отладки
-                        if (data.c && data.d && data.d.b && data.d.a) {
+                        // MEXC depth формат: data.d.bids и data.d.asks - массивы [цена, объем]
+                        if (data.c && data.d && data.d.bids && data.d.asks) {
                             const symbol = data.c.toUpperCase();
                             if (COINS.includes(symbol)) {
-                                const bid = parseFloat(data.d.b);
-                                const ask = parseFloat(data.d.a);
-                                if (!isNaN(bid) && !isNaN(ask) && bid > 0 && ask > 0) {
-                                    prices.mexc[symbol] = {
-                                        bid: bid,
-                                        ask: ask,
-                                        timestamp: Date.now()
-                                    };
-                                    console.log(`✅ MEXC ${symbol}: bid=${bid} ask=${ask}`);
-                                    updateArbitrageData();
+                                // Берем лучшую цену покупки (самая высокая bid) и продажи (самая низкая ask)
+                                const bids = data.d.bids;
+                                const asks = data.d.asks;
+                                if (bids.length > 0 && asks.length > 0) {
+                                    const bid = parseFloat(bids[0][0]); // Первый элемент массива - цена
+                                    const ask = parseFloat(asks[0][0]);
+                                    if (!isNaN(bid) && !isNaN(ask) && bid > 0 && ask > 0) {
+                                        prices.mexc[symbol] = {
+                                            bid: bid,
+                                            ask: ask,
+                                            timestamp: Date.now()
+                                        };
+                                        console.log(`✅ MEXC ${symbol}: bid=${bid} ask=${ask}`);
+                                        updateArbitrageData();
+                                    }
                                 }
                             }
+                        } else if (data.msg && data.msg.includes('not supported')) {
+                            // Игнорируем ошибки "not supported" - это нормально для неподдерживаемых монет
                         } else {
-                            // Логируем необработанные сообщения
-                            console.log('📡 MEXC unhandled message:', data);
+                            // Логируем только важные необработанные сообщения
+                            if (data.id !== 0 || (data.code !== 0 && data.code !== undefined)) {
+                                console.log('📡 MEXC unhandled message:', data);
+                            }
                         }
                     } catch (error) {
                         console.error('MEXC message parse error:', error, event.data);
@@ -479,12 +494,19 @@
                         connectionStatus.okx = true;
                         updateStatusBar();
                         // OKX официальный формат подписки: args должен быть массивом объектов с channel и instId
+                        // OKX использует формат BTC-USDT вместо BTCUSDT для некоторых монет
+                        const okxSubscriptions = COINS.map(coin => {
+                            // Преобразуем BTCUSDT в BTC-USDT для OKX
+                            const base = coin.replace('USDT', '');
+                            const instId = `${base}-USDT`;
+                            return {
+                                channel: 'tickers',
+                                instId: instId
+                            };
+                        });
                         wsConnections.okx.send(JSON.stringify({
                             op: 'subscribe',
-                            args: COINS.map(coin => ({
-                                channel: 'tickers',
-                                instId: coin
-                            }))
+                            args: okxSubscriptions
                         }));
                         console.log('📡 OKX: Подписка на', COINS.length, 'монет отправлена');
                     };
@@ -503,17 +525,21 @@
                             // OKX формат: data.data - массив тикеров
                             if (data.data && Array.isArray(data.data) && data.data.length > 0) {
                                 data.data.forEach(ticker => {
-                                    if (ticker.instId && COINS.includes(ticker.instId)) {
-                                        const bid = parseFloat(ticker.bidPx);
-                                        const ask = parseFloat(ticker.askPx);
-                                        if (!isNaN(bid) && !isNaN(ask) && bid > 0 && ask > 0) {
-                                            prices.okx[ticker.instId] = {
-                                                bid: bid,
-                                                ask: ask,
-                                                timestamp: Date.now()
-                                            };
-                                            console.log(`✅ OKX ${ticker.instId}: bid=${bid} ask=${ask}`);
-                                            updateArbitrageData();
+                                    if (ticker.instId) {
+                                        // Преобразуем BTC-USDT обратно в BTCUSDT для сравнения
+                                        const coinSymbol = ticker.instId.replace('-', '');
+                                        if (COINS.includes(coinSymbol)) {
+                                            const bid = parseFloat(ticker.bidPx);
+                                            const ask = parseFloat(ticker.askPx);
+                                            if (!isNaN(bid) && !isNaN(ask) && bid > 0 && ask > 0) {
+                                                prices.okx[coinSymbol] = {
+                                                    bid: bid,
+                                                    ask: ask,
+                                                    timestamp: Date.now()
+                                                };
+                                                console.log(`✅ OKX ${coinSymbol}: bid=${bid} ask=${ask}`);
+                                                updateArbitrageData();
+                                            }
                                         }
                                     }
                                 });
@@ -543,16 +569,22 @@
                         connectionStatus.kucoin = true;
                         updateStatusBar();
                         
-                        // Подписываемся на ticker для всех монет
-                        COINS.forEach(coin => {
-                            kucoinWS.send(JSON.stringify({
-                                id: Date.now(),
-                                type: 'subscribe',
-                                topic: `/market/ticker:${coin}`,
-                                privateChannel: false,
-                                response: true
-                            }));
-                        });
+                        // KuCoin требует сначала получить токен через REST API
+                        // Но для публичных данных можно использовать прямой endpoint
+                        // Подписываемся на ticker для всех монет с задержкой
+                        setTimeout(() => {
+                            COINS.forEach((coin, index) => {
+                                setTimeout(() => {
+                                    kucoinWS.send(JSON.stringify({
+                                        id: Date.now() + index,
+                                        type: 'subscribe',
+                                        topic: `/market/ticker:${coin}`,
+                                        privateChannel: false,
+                                        response: true
+                                    }));
+                                }, index * 100); // Задержка между подписками
+                            });
+                        }, 1000);
                     };
                     
                     kucoinWS.onmessage = (e) => {
@@ -566,7 +598,21 @@
                                 return;
                             }
                             
-                            console.log('📡 KuCoin message:', data);
+                            // Игнорируем ошибки аутентификации и неподдерживаемые монеты
+                            if (data.type === 'error') {
+                                if (data.code === 401 || data.data === 'token is invalid') {
+                                    // Проблема с токеном - это нормально для публичного endpoint
+                                    console.warn('⚠️ KuCoin: требуется токен, используем только REST API');
+                                    return;
+                                }
+                                console.log('📡 KuCoin error:', data);
+                                return;
+                            }
+                            
+                            // Логируем только важные сообщения
+                            if (data.type !== 'message' && data.type !== 'pong' && data.type !== 'ack') {
+                                console.log('📡 KuCoin message:', data);
+                            }
                             
                             // KuCoin формат: data.data содержит данные тикера
                             if (data.type === 'message' && data.data) {
@@ -655,8 +701,28 @@
                                 return;
                             }
                             
-                            // Логируем все сообщения для отладки
-                            console.log('📡 Bitget message:', data);
+                            // Игнорируем ошибки для неподдерживаемых монет
+                            if (data.event === 'error') {
+                                // Bitget не поддерживает многие монеты - это нормально
+                                if (data.code === 30001 || data.msg?.includes("doesn't exist")) {
+                                    // Не логируем ошибки "doesn't exist" - это ожидаемо
+                                    return;
+                                }
+                                if (data.code === 30006 && data.msg?.includes('too many')) {
+                                    // Слишком много запросов - подождем
+                                    console.warn('⚠️ Bitget: слишком много запросов, пропускаем');
+                                    return;
+                                }
+                                console.log('📡 Bitget error:', data);
+                                return;
+                            }
+                            
+                            // Логируем только важные сообщения (не все)
+                            if (data.data && (data.data.bestBid || data.data.bestAsk)) {
+                                // Это тикер данные - не логируем, обработаем ниже
+                            } else if (data.event !== 'subscribe' && data.action !== 'subscribe') {
+                                console.log('📡 Bitget message:', data);
+                            }
                             
                             // Bitget формат: data.data может быть объектом или массивом
                             let tickerData = null;
@@ -800,8 +866,19 @@
                                 return;
                             }
                             
-                            // Логируем все сообщения для отладки
-                            if (!Array.isArray(data)) {
+                            // Игнорируем ошибки для неподдерживаемых монет
+                            if (data.event === 'error') {
+                                // Bitfinex не поддерживает USDT пары для многих монет - это нормально
+                                if (data.msg && data.msg.includes('invalid')) {
+                                    // Не логируем ошибки invalid symbol - это ожидаемо
+                                    return;
+                                }
+                                console.log('📡 Bitfinex error:', data);
+                                return;
+                            }
+                            
+                            // Логируем только важные необработанные сообщения
+                            if (!Array.isArray(data) && data.event !== 'info' && data.event !== 'pong') {
                                 console.log('📡 Bitfinex unhandled message:', data);
                             }
                             
