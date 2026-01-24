@@ -178,6 +178,7 @@
         // Торговые комиссии (0.1% = 0.001)
         const BINANCE_TRADE_FEE = 0.001;
         const BYBIT_TRADE_FEE = 0.001;
+        const MEXC_TRADE_FEE = 0.001;
         
         // Комиссия вывода убрана - используем только торговые комиссии
         function getWithdrawFee(coin) {
@@ -211,6 +212,20 @@
                 return null;
             } catch (error) {
                 console.error(`Bybit error for ${symbol}:`, error);
+                return null;
+            }
+        }
+        
+        async function fetchMexcPrice(symbol) {
+            try {
+                const response = await fetch(`https://api.mexc.com/api/v3/ticker/bookTicker?symbol=${symbol}`);
+                const data = await response.json();
+                return {
+                    bid: parseFloat(data.bidPrice),
+                    ask: parseFloat(data.askPrice)
+                };
+            } catch (error) {
+                console.error(`MEXC error for ${symbol}:`, error);
                 return null;
             }
         }
@@ -301,9 +316,8 @@
             
             for (const result of results) {
                 const isPositive = result.maxProfit >= 0;
-                const scenarioText = result.bestScenario === 1 
-                    ? `Binance → Bybit (${formatNumber(result.profit1)} USDT)`
-                    : `Bybit → Binance (${formatNumber(result.profit2)} USDT)`;
+                const scenario = result.bestScenario;
+                const scenarioText = `${scenario.buyExchange} → ${scenario.sellExchange} (${formatNumber(scenario.profit)} USDT)`;
                 
                 html += `
                     <div class="arbitrage-item ${isPositive ? 'positive' : 'negative'}">
@@ -314,14 +328,21 @@
                             </div>
                         </div>
                         <div class="exchanges-info">
+                            ${result.binance ? `
                             <div class="exchange-row">
                                 <span class="exchange-label">Binance:</span>
                                 <span class="exchange-value">Покупка ${formatNumber(result.binance.ask)} | Продажа ${formatNumber(result.binance.bid)}</span>
-                            </div>
+                            </div>` : ''}
+                            ${result.bybit ? `
                             <div class="exchange-row">
                                 <span class="exchange-label">Bybit:</span>
                                 <span class="exchange-value">Покупка ${formatNumber(result.bybit.ask)} | Продажа ${formatNumber(result.bybit.bid)}</span>
-                            </div>
+                            </div>` : ''}
+                            ${result.mexc ? `
+                            <div class="exchange-row">
+                                <span class="exchange-label">MEXC:</span>
+                                <span class="exchange-value">Покупка ${formatNumber(result.mexc.ask)} | Продажа ${formatNumber(result.mexc.bid)}</span>
+                            </div>` : ''}
                         </div>
                         <div class="scenario-info">
                             <div class="scenario-text">💡 Лучший сценарий: ${scenarioText}</div>
