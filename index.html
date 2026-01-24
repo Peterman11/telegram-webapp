@@ -199,7 +199,27 @@
         const statusBar = document.getElementById('statusBar');
         
         // Все поддерживаемые монеты
-        const COINS = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'ADAUSDT', 'XRPUSDT'];
+        // Топ-100 криптовалют по рыночной капитализации
+        // Примечание: стейблкоины (USDT, USDC, DAI и т.д.) исключены, так как не торгуются против USDT
+        const COINS = [
+            'CMC20USDT', 'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'XRPUSDT', 
+            'SOLUSDT', 'TRXUSDT', 'DOGEUSDT', 'ADAUSDT', 'BCHUSDT', 
+            'XMRUSDT', 'LINKUSDT', 'LEOUSDT', 'HYPEUSDT', 'XLMUSDT', 
+            'ZECUSDT', 'CCUSDT', 'SUIUSDT', 'LTCUSDT', 'AVAXUSDT', 
+            'WLFIUSDT', 'HBARUSDT', 'SHIBUSDT', 'TONUSDT', 
+            'CROUSDT', 'DOTUSDT', 'UNIUSDT', 'MNTUSDT', 'BGBUSDT', 'TAOUSDT', 
+            'AAVEUSDT', 'XAUTUSDT', 'OKBUSDT', 'PEPEUSDT', 'MUSDT', 'PAXGUSDT', 
+            'NEARUSDT', 'ICPUSDT', 'ETCUSDT', 'MYXUSDT', 'ASTERUSDT', 'ONDOUSDT', 
+            'SKYUSDT', 'PIUSDT', 'KCSUSDT', 'ENAUSDT', 
+            'POLUSDT', 'WLDUSDT', 'APTUSDT', 'KASUSDT', 'ATOMUSDT', 'GTUSDT', 
+            'ALGOUSDT', 'RENDERUSDT', 'ARBUSDT', 'TRUMPUSDT', 'NIGHTUSDT', 
+            'FILUSDT', 'QNTUSDT', 'PUMPUSDT', 'VETUSDT', 'FLRUSDT', 'IPUSDT', 
+            'DASHUSDT', 'BONKUSDT', 'XDCUSDT', 'SEIUSDT', 'CAKEUSDT', 
+            'JUPUSDT', 'PENGUUSDT', 'XTZUSDT', 'NEXOUSDT', 'OPUSDT', 'ZROUSDT', 
+            'KAIAUSDT', 'STXUSDT', 'VIRTUALUSDT', 'CHZUSDT', 'FETUSDT', 'CRVUSDT', 
+            'IMXUSDT', '2ZUSDT', 'LITUSDT', 'INJUSDT', 
+            'MORPHOUSDT', 'AXSUSDT', 'LDOUSDT', 'AEROUSDT', 'ETHFIUSDT'
+        ];
         
         // Объем для расчета (в USDT)
         const TRADE_AMOUNT = 100;
