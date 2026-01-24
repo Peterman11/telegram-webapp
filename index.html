@@ -744,26 +744,44 @@
                             }));
                         });
                     };
-                    wsConnections.bingx.onmessage = (e) => {
+                    wsConnections.bingx.onmessage = async (e) => {
                         try {
-                            const data = JSON.parse(e.data);
+                            // BingX отправляет данные в формате Blob, нужно сначала преобразовать в текст
+                            let textData;
+                            if (e.data instanceof Blob) {
+                                textData = await e.data.text();
+                            } else if (typeof e.data === 'string') {
+                                textData = e.data;
+                            } else {
+                                // Пробуем преобразовать ArrayBuffer
+                                textData = new TextDecoder().decode(e.data);
+                            }
+                            
+                            const data = JSON.parse(textData);
                             // BingX отправляет события подключения
                             if (data.id && !data.data) return;
                             
                             if (data.data && data.data.bidPrice && data.data.askPrice) {
                                 const symbol = data.data.symbol;
                                 if (symbol && COINS.includes(symbol)) {
-                                    prices.bingx[symbol] = {
-                                        bid: parseFloat(data.data.bidPrice),
-                                        ask: parseFloat(data.data.askPrice),
-                                        timestamp: Date.now()
-                                    };
-                                    console.log(`BingX: ${symbol} bid=${data.data.bidPrice} ask=${data.data.askPrice}`);
-                                    updateArbitrageData();
+                                    const bid = parseFloat(data.data.bidPrice);
+                                    const ask = parseFloat(data.data.askPrice);
+                                    if (!isNaN(bid) && !isNaN(ask) && bid > 0 && ask > 0) {
+                                        prices.bingx[symbol] = {
+                                            bid: bid,
+                                            ask: ask,
+                                            timestamp: Date.now()
+                                        };
+                                        console.log(`✅ BingX ${symbol}: bid=${bid} ask=${ask}`);
+                                        updateArbitrageData();
+                                    }
                                 }
                             }
                         } catch (err) {
-                            console.error('BingX message parse error:', err, e.data);
+                            // Не логируем ошибки Blob, так как это нормально для BingX
+                            if (!(e.data instanceof Blob)) {
+                                console.error('BingX message parse error:', err, e.data);
+                            }
                         }
                     };
                     wsConnections.bingx.onerror = () => { connectionStatus.bingx = false; updateStatusBar(); };
@@ -1061,7 +1079,21 @@
                 🏆 ТОП-${topResults.length} лучших возможностей | ${positiveCount} с прибылью | Сортировка: по прибыли (↓)
             </div>` + html;
             
-            contentDiv.innerHTML = html;
+            console.log('📝 Обновляем HTML, длина:', html.length, 'символов');
+            console.log('📝 contentDiv существует?', !!contentDiv);
+            
+            if (!contentDiv) {
+                console.error('❌ contentDiv не найден!');
+                return;
+            }
+            
+            try {
+                contentDiv.innerHTML = html;
+                console.log('✅ HTML обновлен успешно, contentDiv.innerHTML.length:', contentDiv.innerHTML.length);
+                console.log('✅ Первые 200 символов HTML:', html.substring(0, 200));
+            } catch (err) {
+                console.error('❌ Ошибка при обновлении HTML:', err);
+            }
         }
         
         refreshButton.onclick = () => {
@@ -1095,11 +1127,15 @@
         
         // Функция для начальной загрузки данных через REST API для ВСЕХ бирж и ВСЕХ монет
         async function loadInitialData() {
-            console.log('Loading initial data via REST API for ALL exchanges and ALL coins...');
-            contentDiv.innerHTML = '<div class="loading">Загрузка начальных данных со всех бирж...</div>';
+            console.log('📥 Loading initial data via REST API for ALL exchanges and ALL coins...');
+            contentDiv.innerHTML = '<div class="loading">⏳ Загрузка начальных данных со всех бирж...<br>Это может занять несколько секунд...</div>';
+            
+            let successCount = 0;
+            let errorCount = 0;
             
             // Загружаем данные для каждой монеты со всех бирж
             for (const coin of COINS) {
+                console.log(`\n🪙 Загрузка данных для ${coin}...`);
                 try {
                     // Загружаем данные параллельно со всех бирж
                     const [binance, okx, bybit, kucoin, mexc, bitget, huobi, bitfinex, bingx, coinbase] = await Promise.all([
