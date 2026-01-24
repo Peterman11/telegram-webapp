@@ -683,12 +683,29 @@
                             })
                             .catch(() => null),
                         fetch(`https://api.mexc.com/api/v3/ticker/bookTicker?symbol=${coin}`)
-                            .then(r => r.json())
-                            .then(d => ({
-                                bid: parseFloat(d.bidPrice),
-                                ask: parseFloat(d.askPrice)
-                            }))
-                            .catch(() => null)
+                            .then(r => {
+                                if (!r.ok) {
+                                    console.error(`MEXC REST API error for ${coin}: HTTP ${r.status}`);
+                                    return null;
+                                }
+                                return r.json();
+                            })
+                            .then(d => {
+                                if (!d) return null;
+                                console.log(`MEXC REST response for ${coin}:`, d);
+                                if (d.bidPrice && d.askPrice) {
+                                    return {
+                                        bid: parseFloat(d.bidPrice),
+                                        ask: parseFloat(d.askPrice)
+                                    };
+                                }
+                                console.error(`MEXC REST: invalid format for ${coin}:`, d);
+                                return null;
+                            })
+                            .catch(err => {
+                                console.error(`MEXC REST API error for ${coin}:`, err);
+                                return null;
+                            })
                     ]);
                     
                     if (binance) {
