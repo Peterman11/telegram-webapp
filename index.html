@@ -1035,25 +1035,35 @@
             console.log('🎨 Начинаем рендеринг HTML для', topResults.length, 'результатов');
             let html = '<div class="arbitrage-list">';
             
-            for (const result of topResults) {
-                console.log('  Рендерим:', result.coin, 'прибыль:', result.maxProfit, 'биржи:', Object.keys(result.prices).length);
-                const isPositive = result.maxProfit >= 0;
-                const scenario = result.bestScenario;
-                const scenarioText = `${scenario.buyExchange} → ${scenario.sellExchange} (${formatNumber(scenario.profit)} USDT)`;
-                
-                // Формируем список всех доступных цен для этой монеты
-                let exchangesHtml = '';
-                Object.keys(result.prices).forEach(exchangeName => {
-                    const priceData = result.prices[exchangeName];
-                    const displayName = exchangeName.charAt(0).toUpperCase() + exchangeName.slice(1);
-                    exchangesHtml += `
+            try {
+                for (const result of topResults) {
+                    try {
+                        console.log('  Рендерим:', result.coin, 'прибыль:', result.maxProfit, 'биржи:', Object.keys(result.prices).length);
+                        const isPositive = result.maxProfit >= 0;
+                        const scenario = result.bestScenario;
+                        if (!scenario) {
+                            console.warn('  ⚠️ Нет сценария для', result.coin);
+                            continue;
+                        }
+                        const scenarioText = `${scenario.buyExchange} → ${scenario.sellExchange} (${formatNumber(scenario.profit)} USDT)`;
+                        
+                        // Формируем список всех доступных цен для этой монеты
+                        let exchangesHtml = '';
+                        Object.keys(result.prices).forEach(exchangeName => {
+                            const priceData = result.prices[exchangeName];
+                            if (!priceData || !priceData.bid || !priceData.ask) {
+                                console.warn(`  ⚠️ Нет данных для ${exchangeName} в ${result.coin}`);
+                                return;
+                            }
+                            const displayName = exchangeName.charAt(0).toUpperCase() + exchangeName.slice(1);
+                            exchangesHtml += `
                         <div class="exchange-row">
                             <span class="exchange-label">${displayName}:</span>
                             <span class="exchange-value">Покупка ${formatNumber(priceData.ask)} | Продажа ${formatNumber(priceData.bid)}</span>
                         </div>`;
-                });
-                
-                html += `
+                        });
+                        
+                        html += `
                     <div class="arbitrage-item ${isPositive ? 'positive' : 'negative'}">
                         <div class="coin-header">
                             <div class="coin-name">${formatCoinName(result.coin)}</div>
@@ -1069,7 +1079,15 @@
                         </div>
                     </div>
                 `;
+                    } catch (err) {
+                        console.error('  ❌ Ошибка при рендеринге', result.coin, ':', err);
+                    }
+                }
+            } catch (err) {
+                console.error('❌ Критическая ошибка в цикле рендеринга:', err);
             }
+            
+            console.log('✅ Цикл рендеринга завершен, html.length:', html.length);
             
             html += '</div>';
             
