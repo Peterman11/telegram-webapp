@@ -1089,28 +1089,36 @@
             
             console.log('✅ Цикл рендеринга завершен, html.length:', html.length);
             
-            html += '</div>';
-            
-            // Добавляем информацию о количестве найденных возможностей
-            const positiveCount = topResults.filter(r => r.maxProfit >= 0).length;
-            html = `<div style="text-align: center; margin-bottom: 15px; color: var(--tg-theme-hint-color, #999999); font-size: 14px;">
+            try {
+                html += '</div>';
+                console.log('✅ Добавлен закрывающий тег, html.length:', html.length);
+                
+                // Добавляем информацию о количестве найденных возможностей
+                const positiveCount = topResults.filter(r => r.maxProfit >= 0).length;
+                console.log('📊 Положительных результатов:', positiveCount, 'из', topResults.length);
+                
+                html = `<div style="text-align: center; margin-bottom: 15px; color: var(--tg-theme-hint-color, #999999); font-size: 14px;">
                 🏆 ТОП-${topResults.length} лучших возможностей | ${positiveCount} с прибылью | Сортировка: по прибыли (↓)
             </div>` + html;
-            
-            console.log('📝 Обновляем HTML, длина:', html.length, 'символов');
-            console.log('📝 contentDiv существует?', !!contentDiv);
-            
-            if (!contentDiv) {
-                console.error('❌ contentDiv не найден!');
-                return;
-            }
-            
-            try {
+                
+                console.log('✅ Добавлен заголовок, html.length:', html.length);
+                console.log('📝 Обновляем HTML, длина:', html.length, 'символов');
+                console.log('📝 contentDiv существует?', !!contentDiv);
+                console.log('📝 contentDiv.id:', contentDiv?.id);
+                
+                if (!contentDiv) {
+                    console.error('❌ contentDiv не найден!');
+                    return;
+                }
+                
+                console.log('📝 Устанавливаем innerHTML...');
                 contentDiv.innerHTML = html;
-                console.log('✅ HTML обновлен успешно, contentDiv.innerHTML.length:', contentDiv.innerHTML.length);
+                console.log('✅ HTML обновлен успешно!');
+                console.log('✅ contentDiv.innerHTML.length:', contentDiv.innerHTML.length);
                 console.log('✅ Первые 200 символов HTML:', html.substring(0, 200));
             } catch (err) {
                 console.error('❌ Ошибка при обновлении HTML:', err);
+                console.error('❌ Stack trace:', err.stack);
             }
         }
         
