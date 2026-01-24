@@ -591,13 +591,22 @@
                             </div>` : ''}
                         </div>
                         <div class="scenario-info">
-                            <div class="scenario-text">💡 Лучший сценарий: ${scenarioText}</div>
+                            <div class="scenario-text">💡 Лучший сценарий из всех бирж: ${scenarioText}</div>
                         </div>
                     </div>
                 `;
             }
             
             html += '</div>';
+            
+            // Добавляем информацию о количестве найденных возможностей
+            if (results.length > 0) {
+                const positiveCount = results.filter(r => r.maxProfit >= 0).length;
+                html = `<div style="text-align: center; margin-bottom: 15px; color: var(--tg-theme-hint-color, #999999); font-size: 14px;">
+                    📊 Найдено ${results.length} монет | ${positiveCount} с прибылью | Сортировка: по прибыли (↓)
+                </div>` + html;
+            }
+            
             contentDiv.innerHTML = html;
         }
         
