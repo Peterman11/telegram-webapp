@@ -259,48 +259,68 @@
         }
         
         async function loadAllArbitrageData() {
-            contentDiv.innerHTML = '<div class="loading">Загрузка данных по всем монетам...</div>';
+            contentDiv.innerHTML = '<div class="loading">Загрузка данных по всем монетам с 3 бирж...</div>';
             
             const results = [];
             
-            // Загружаем данные по всем монетам параллельно
+            // Загружаем данные по всем монетам параллельно с 3 бирж
             for (const coin of COINS) {
-                const [binance, bybit] = await Promise.all([
+                const [binance, bybit, mexc] = await Promise.all([
                     fetchBinancePrice(coin),
-                    fetchBybitPrice(coin)
+                    fetchBybitPrice(coin),
+                    fetchMexcPrice(coin)
                 ]);
                 
-                if (!binance || !bybit) {
-                    continue; // Пропускаем, если данные не загрузились
+                // Нужно минимум 2 биржи для расчета арбитража
+                const exchanges = [];
+                if (binance) exchanges.push({name: 'Binance', data: binance, fee: BINANCE_TRADE_FEE});
+                if (bybit) exchanges.push({name: 'Bybit', data: bybit, fee: BYBIT_TRADE_FEE});
+                if (mexc) exchanges.push({name: 'MEXC', data: mexc, fee: MEXC_TRADE_FEE});
+                
+                if (exchanges.length < 2) {
+                    continue; // Пропускаем, если данных недостаточно
                 }
                 
                 const withdrawFee = getWithdrawFee(coin);
                 
-                // Расчет арбитража для обоих сценариев
-                const profit1 = calculateProfit(
-                    binance.ask, BINANCE_TRADE_FEE, withdrawFee,
-                    bybit.bid, BYBIT_TRADE_FEE,
-                    TRADE_AMOUNT
-                );
+                // Рассчитываем все возможные сценарии арбитража между биржами
+                let maxProfit = -Infinity;
+                let bestScenario = null;
                 
-                const profit2 = calculateProfit(
-                    bybit.ask, BYBIT_TRADE_FEE, withdrawFee,
-                    binance.bid, BINANCE_TRADE_FEE,
-                    TRADE_AMOUNT
-                );
+                for (let i = 0; i < exchanges.length; i++) {
+                    for (let j = 0; j < exchanges.length; j++) {
+                        if (i === j) continue; // Пропускаем одинаковые биржи
+                        
+                        const buyExchange = exchanges[i];
+                        const sellExchange = exchanges[j];
+                        
+                        const profit = calculateProfit(
+                            buyExchange.data.ask, buyExchange.fee, withdrawFee,
+                            sellExchange.data.bid, sellExchange.fee,
+                            TRADE_AMOUNT
+                        );
+                        
+                        if (profit > maxProfit) {
+                            maxProfit = profit;
+                            bestScenario = {
+                                buyExchange: buyExchange.name,
+                                sellExchange: sellExchange.name,
+                                profit: profit
+                            };
+                        }
+                    }
+                }
                 
-                const maxProfit = Math.max(profit1, profit2);
-                const bestScenario = profit1 > profit2 ? 1 : 2;
-                
-                results.push({
-                    coin: coin,
-                    maxProfit: maxProfit,
-                    bestScenario: bestScenario,
-                    profit1: profit1,
-                    profit2: profit2,
-                    binance: binance,
-                    bybit: bybit
-                });
+                if (bestScenario) {
+                    results.push({
+                        coin: coin,
+                        maxProfit: maxProfit,
+                        bestScenario: bestScenario,
+                        binance: binance,
+                        bybit: bybit,
+                        mexc: mexc
+                    });
+                }
             }
             
             // Сортируем по прибыли (от большей к меньшей)
