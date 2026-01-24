@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Арбитраж криптовалют</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--tg-theme-bg-color, #ffffff);
+            color: var(--tg-theme-text-color, #000000);
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            font-size: 24px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--tg-theme-hint-color, #999999);
+        }
+        
+        .error {
+            background: #ff4444;
+            color: white;
+            padding: 16px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .exchange-card {
+            background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 12px;
+        }
+        
+        .exchange-name {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: var(--tg-theme-text-color, #000000);
+        }
+        
+        .price-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 16px;
+        }
+        
+        .price-label {
+            color: var(--tg-theme-hint-color, #999999);
+        }
+        
+        .price-value {
+            font-weight: 600;
+            color: var(--tg-theme-text-color, #000000);
+        }
+        
+        .arbitrage-section {
+            background: var(--tg-theme-button-color, #3390ec);
+            color: var(--tg-theme-button-text-color, #ffffff);
+            border-radius: 12px;
+            padding: 20px;
+            margin-top: 20px;
+            text-align: center;
+        }
+        
+        .arbitrage-title {
+            font-size: 20px;
+            font-weight: 600;
+            margin-bottom: 16px;
+        }
+        
+        .profit {
+            font-size: 32px;
+            font-weight: 700;
+            margin: 16px 0;
+        }
+        
+        .profit.positive {
+            color: #4caf50;
+        }
+        
+        .profit.negative {
+            color: #ff4444;
+        }
+        
+        .scenario {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 12px;
+            text-align: left;
+        }
+        
+        .scenario-title {
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        
+        .refresh-button {
+            width: 100%;
+            background: var(--tg-theme-button-color, #3390ec);
+            color: var(--tg-theme-button-text-color, #ffffff);
+            border: none;
+            border-radius: 12px;
+            padding: 16px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        
+        .refresh-button:active {
+            opacity: 0.7;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 Арбитраж BTC/USDT</h1>
+        <div id="content">
+            <div class="loading">Загрузка данных...</div>
+        </div>
+        <button class="refresh-button" id="refreshButton">🔄 Обновить</button>
+    </div>
+    
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+        
+        const contentDiv = document.getElementById('content');
+        const refreshButton = document.getElementById('refreshButton');
+        
+        // API endpoints для бирж
+        const BINANCE_API = 'https://api.binance.com/api/v3/ticker/bookTicker?symbol=BTCUSDT';
+        const BYBIT_API = 'https://api.bybit.com/v5/market/orderbook?category=spot&symbol=BTCUSDT&limit=1';
+        
+        // Объем для расчета (в USDT)
+        const TRADE_AMOUNT = 100;
+        
+        // Комиссии (0.1% = 0.001)
+        const BINANCE_TRADE_FEE = 0.001;
+        const BYBIT_TRADE_FEE = 0.001;
+        const WITHDRAW_FEE_BTC = 0.0002;
+        
+        async function fetchBinancePrice() {
+            try {
+                const response = await fetch(BINANCE_API);
+                const data = await response.json();
+                return {
+                    bid: parseFloat(data.bidPrice),
+                    ask: parseFloat(data.askPrice)
+                };
+            } catch (error) {
+                console.error('Binance error:', error);
+                return null;
+            }
+        }
+        
+        async function fetchBybitPrice() {
+            try {
+                const response = await fetch(BYBIT_API);
+                const data = await response.json();
+                if (data.retCode === 0 && data.result && data.result.b && data.result.a) {
+                    return {
+                        bid: parseFloat(data.result.b[0][0]), // best bid
+                        ask: parseFloat(data.result.a[0][0])  // best ask
+                    };
+                }
+                return null;
+            } catch (error) {
+                console.error('Bybit error:', error);
+                return null;
+            }
+        }
+        
+        function calculateProfit(buyPrice, buyFee, withdrawFee, sellPrice, sellFee, amount) {
+            // Покупка
+            const afterBuyFee = amount * (1 - buyFee);
+            const cryptoBought = afterBuyFee / buyPrice;
+            const cryptoAfterWithdraw = cryptoBought - withdrawFee;
+            
+            if (cryptoAfterWithdraw <= 0) return -amount;
+            
+            // Продажа
+            const usdtFromSell = cryptoAfterWithdraw * sellPrice;
+            const usdtAfterSellFee = usdtFromSell * (1 - sellFee);
+            
+            return usdtAfterSellFee - amount;
+        }
+        
+        function formatNumber(num, decimals = 2) {
+            return num.toFixed(decimals);
+        }
+        
+        async function loadData() {
+            contentDiv.innerHTML = '<div class="loading">Загрузка данных...</div>';
+            
+            const [binance, bybit] = await Promise.all([
+                fetchBinancePrice(),
+                fetchBybitPrice()
+            ]);
+            
+            if (!binance || !bybit) {
+                contentDiv.innerHTML = '<div class="error">Ошибка загрузки данных с бирж</div>';
+                return;
+            }
+            
+            // Расчет арбитража
+            const profit1 = calculateProfit(
+                binance.ask, BINANCE_TRADE_FEE, WITHDRAW_FEE_BTC,
+                bybit.bid, BYBIT_TRADE_FEE,
+                TRADE_AMOUNT
+            );
+            
+            const profit2 = calculateProfit(
+                bybit.ask, BYBIT_TRADE_FEE, WITHDRAW_FEE_BTC,
+                binance.bid, BINANCE_TRADE_FEE,
+                TRADE_AMOUNT
+            );
+            
+            const maxProfit = Math.max(profit1, profit2);
+            
+            // Отображение данных
+            let html = `
+                <div class="exchange-card">
+                    <div class="exchange-name">🔹 Binance</div>
+                    <div class="price-row">
+                        <span class="price-label">Покупка (Ask):</span>
+                        <span class="price-value">${formatNumber(binance.ask)} USDT</span>
+                    </div>
+                    <div class="price-row">
+                        <span class="price-label">Продажа (Bid):</span>
+                        <span class="price-value">${formatNumber(binance.bid)} USDT</span>
+                    </div>
+                </div>
+                
+                <div class="exchange-card">
+                    <div class="exchange-name">🔹 Bybit</div>
+                    <div class="price-row">
+                        <span class="price-label">Покупка (Ask):</span>
+                        <span class="price-value">${formatNumber(bybit.ask)} USDT</span>
+                    </div>
+                    <div class="price-row">
+                        <span class="price-label">Продажа (Bid):</span>
+                        <span class="price-value">${formatNumber(bybit.bid)} USDT</span>
+                    </div>
+                </div>
+                
+                <div class="arbitrage-section">
+                    <div class="arbitrage-title">💰 Потенциальная прибыль</div>
+                    <div class="profit ${maxProfit >= 0 ? 'positive' : 'negative'}">
+                        ${maxProfit >= 0 ? '+' : ''}${formatNumber(maxProfit)} USDT
+                    </div>
+                    <div style="font-size: 14px; opacity: 0.9; margin-top: 8px;">
+                        Объём: ${TRADE_AMOUNT} USDT
+                    </div>
+                </div>
+                
+                <div class="scenario">
+                    <div class="scenario-title">🔄 Сценарий 1: Binance → Bybit</div>
+                    <div>Покупка: ${formatNumber(binance.ask)} USDT</div>
+                    <div>Продажа: ${formatNumber(bybit.bid)} USDT</div>
+                    <div style="margin-top: 8px; font-weight: 600;">
+                        Результат: ${profit1 >= 0 ? '+' : ''}${formatNumber(profit1)} USDT
+                    </div>
+                </div>
+                
+                <div class="scenario">
+                    <div class="scenario-title">🔄 Сценарий 2: Bybit → Binance</div>
+                    <div>Покупка: ${formatNumber(bybit.ask)} USDT</div>
+                    <div>Продажа: ${formatNumber(binance.bid)} USDT</div>
+                    <div style="margin-top: 8px; font-weight: 600;">
+                        Результат: ${profit2 >= 0 ? '+' : ''}${formatNumber(profit2)} USDT
+                    </div>
+                </div>
+            `;
+            
+            contentDiv.innerHTML = html;
+        }
+        
+        refreshButton.onclick = loadData;
+        
+        // Загружаем данные при открытии
+        loadData();
+        
+        // Автообновление каждые 10 секунд
+        setInterval(loadData, 10000);
+    </script>
+</body>
+</html>
+
