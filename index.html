@@ -1550,7 +1550,8 @@
                             console.warn(`⚠️ REST ${name} ${coin}: неполные данные`, data);
                             errorCount++;
                         } else {
-                            console.warn(`❌ REST ${name} ${coin}: нет данных (возможно CORS или ошибка API)`);
+                            // Не логируем ошибки для неподдерживаемых монет - это нормально
+                            // console.warn(`❌ REST ${name} ${coin}: нет данных (возможно CORS или ошибка API)`);
                             errorCount++;
                         }
                     });
@@ -1558,6 +1559,11 @@
                 } catch (error) {
                     console.error(`❌ Error loading initial data for ${coin}:`, error);
                     errorCount++;
+                }
+                
+                // Добавляем задержку между монетами, чтобы избежать rate limiting
+                if (i < COINS.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 200)); // 200ms задержка
                 }
             }
             
