@@ -5,6 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Арбитраж криптовалют</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <!-- Pako для распаковки gzip (Huobi) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
     <style>
         :root {
             --bg-color: var(--tg-theme-bg-color, #ffffff);
@@ -17,9 +19,7 @@
             --negative-color: #ff4444;
             --warning-color: #ff9800;
         }
-        
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: var(--bg-color);
@@ -27,15 +27,8 @@
             padding: 16px;
             min-height: 100vh;
         }
-        
         .container { max-width: 600px; margin: 0 auto; }
-        
-        h1 {
-            font-size: 22px;
-            margin-bottom: 16px;
-            text-align: center;
-        }
-        
+        h1 { font-size: 22px; margin-bottom: 16px; text-align: center; }
         .status-bar {
             text-align: center;
             padding: 10px 16px;
@@ -44,11 +37,9 @@
             font-size: 13px;
             font-weight: 500;
         }
-        
         .status-bar.connected { background: var(--positive-color); color: white; }
         .status-bar.connecting { background: var(--warning-color); color: white; }
         .status-bar.disconnected { background: var(--negative-color); color: white; }
-        
         .loading {
             text-align: center;
             padding: 40px 20px;
@@ -56,31 +47,22 @@
             font-size: 14px;
             line-height: 1.6;
         }
-        
         .arbitrage-list { display: flex; flex-direction: column; gap: 10px; }
-        
         .arbitrage-card {
             background: var(--secondary-bg);
             border-radius: 12px;
             padding: 14px 16px;
             border-left: 4px solid var(--button-color);
         }
-        
         .arbitrage-card.positive { border-left-color: var(--positive-color); }
         .arbitrage-card.negative { border-left-color: var(--negative-color); }
-        
         .card-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 10px;
         }
-        
-        .coin-symbol {
-            font-size: 17px;
-            font-weight: 600;
-        }
-        
+        .coin-symbol { font-size: 17px; font-weight: 600; }
         .profit-badge {
             font-size: 16px;
             font-weight: 700;
@@ -88,26 +70,12 @@
             border-radius: 8px;
             color: white;
         }
-        
         .profit-badge.positive { background: var(--positive-color); }
         .profit-badge.negative { background: var(--negative-color); }
-        
-        .exchanges-grid {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-            font-size: 13px;
-        }
-        
-        .exchange-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
+        .exchanges-grid { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+        .exchange-row { display: flex; justify-content: space-between; align-items: center; }
         .exchange-name { color: var(--hint-color); }
         .exchange-prices { font-weight: 500; }
-        
         .scenario {
             margin-top: 10px;
             padding-top: 10px;
@@ -115,7 +83,6 @@
             font-size: 13px;
             color: var(--hint-color);
         }
-        
         .refresh-btn {
             width: 100%;
             background: var(--button-color);
@@ -128,15 +95,8 @@
             cursor: pointer;
             margin-top: 16px;
         }
-        
         .refresh-btn:active { opacity: 0.8; }
-        
-        .summary {
-            text-align: center;
-            font-size: 13px;
-            color: var(--hint-color);
-            margin-bottom: 12px;
-        }
+        .summary { text-align: center; font-size: 13px; color: var(--hint-color); margin-bottom: 12px; }
     </style>
 </head>
 <body>
@@ -155,142 +115,72 @@
         // ═══════════════════════════════════════════════════════════════════
         
         const CONFIG = {
-            TRADE_AMOUNT: 100,        // Объем торговли в USDT
-            UPDATE_THROTTLE: 500,     // Минимальный интервал обновления UI (мс)
-            RECONNECT_DELAY: 5000,    // Задержка переподключения (мс)
-            TOP_RESULTS: 10,          // Количество лучших результатов для отображения
+            TRADE_AMOUNT: 100,
+            UPDATE_THROTTLE: 500,
+            RECONNECT_DELAY: 5000,
+            TOP_RESULTS: 10,
         };
 
-        // Топ-70 монет по капитализации (без стейблкоинов USDT/USDC/DAI/USDe/PYUSD)
+        // Топ монеты - только самые ликвидные для надежности
         const COINS = [
-            // Топ-10
             'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'XRPUSDT', 'SOLUSDT', 
-            'TRXUSDT', 'DOGEUSDT', 'STETHUSDT',
-            
-            // Топ 11-20
-            'ADAUSDT', 'LINKUSDT', 'LTCUSDT', 'AVAXUSDT', 'XLMUSDT',
-            'XMRUSDT', 'BCHUSDT', 'HBARUSDT', 'SHIBUSDT', 'UNIUSDT',
-            
-            // Топ 21-40
-            'SUIUSDT', 'CROUSDT', 'TONUSDT', 'MNTUSDT', 'ICPUSDT',
-            'OPUSDT', 'MATICUSDT', 'FTMUSDT', 'ARBUSDT', 'NEARUSDT',
-            'AAVEUSDT', 'PEPEUSDT', 'WLDUSDT', 'ZECUSDT', 'DOTUSDT',
-            
-            // Топ 41-70
-            'SNXUSDT', 'FILUSDT', 'VETUSDT', 'ALGOUSDT', 'FLOWUSDT',
-            'RENDERUSDT', 'MKRUSDT', 'BATUSDT', 'QTUMUSDT', 'BSVUSDT',
-            'DCRUSDT', 'HNTUSDT', 'NEOUSDT', 'AXSUSDT', 'RUNEUSDT',
-            'GALAUSDT', 'KASUSDT', 'INJUSDT', 'ZILUSDT', 'RVNUSDT',
-            'SUSHIUSDT', 'ROSEUSDT', 'STXUSDT', 'LRCUSDT', '1INCHUSDT',
-            'ARUSDT', 'BNTUSDT',
-            
-            // Дополнительные популярные
-            'APTUSDT', 'SEIUSDT', 'CHZUSDT', 'CRVUSDT', 'LDOUSDT',
-            'IMXUSDT', 'SANDUSDT', 'MANAUSDT', 'APEUSDT', 'ETCUSDT',
-            'ATOMUSDT', 'FETUSDT', 'XTZUSDT', 'ENJUSDT', 'EGLDUSDT'
+            'TRXUSDT', 'DOGEUSDT', 'ADAUSDT', 'LINKUSDT', 'LTCUSDT', 
+            'AVAXUSDT', 'XLMUSDT', 'XMRUSDT', 'BCHUSDT', 'DOTUSDT',
+            'UNIUSDT', 'SHIBUSDT', 'ATOMUSDT', 'NEARUSDT', 'AAVEUSDT',
+            'APTUSDT', 'ARBUSDT', 'OPUSDT', 'FILUSDT', 'ICPUSDT',
+            'ETCUSDT', 'ALGOUSDT', 'VETUSDT', 'MATICUSDT', 'INJUSDT',
+            'FTMUSDT', 'AXSUSDT', 'SUIUSDT', 'SEIUSDT', 'TONUSDT',
+            'PEPEUSDT', 'MKRUSDT', 'STXUSDT', 'CRVUSDT', 'LDOUSDT'
         ];
 
-        // Конфигурация бирж
-        const EXCHANGES = {
-            binance: {
-                name: 'Binance',
-                fee: 0.001,
-                wsUrl: 'wss://stream.binance.com:9443/ws/!bookTicker',
-                formatSymbol: (coin) => coin,
-                parseSymbol: (symbol) => symbol,
-            },
-            bybit: {
-                name: 'Bybit',
-                fee: 0.001,
-                wsUrl: 'wss://stream.bybit.com/v5/public/spot',
-                formatSymbol: (coin) => coin,
-                parseSymbol: (symbol) => symbol,
-                subscribeMsg: (coins) => ({ op: 'subscribe', args: coins.map(c => `orderbook.1.${c}`) }),
-            },
-            okx: {
-                name: 'OKX',
-                fee: 0.001,
-                wsUrl: 'wss://ws.okx.com:8443/ws/v5/public',
-                formatSymbol: (coin) => coin.replace('USDT', '-USDT'),
-                parseSymbol: (symbol) => symbol.replace('-', ''),
-                subscribeMsg: (coins) => ({
-                    op: 'subscribe',
-                    args: coins.map(c => ({ channel: 'tickers', instId: c.replace('USDT', '-USDT') }))
-                }),
-            },
-            kucoin: {
-                name: 'KuCoin',
-                fee: 0.001,
-                wsUrl: 'wss://ws-api-spot.kucoin.com/',
-                formatSymbol: (coin) => coin.replace('USDT', '-USDT'),
-                parseSymbol: (symbol) => symbol.replace('-', ''),
-            },
-            bitget: {
-                name: 'Bitget',
-                fee: 0.001,
-                wsUrl: 'wss://ws.bitget.com/v2/ws/public',
-                formatSymbol: (coin) => coin,
-                parseSymbol: (symbol) => symbol,
-            },
-            huobi: {
-                name: 'Huobi',
-                fee: 0.002,
-                wsUrl: 'wss://api.huobi.pro/ws',
-                formatSymbol: (coin) => coin.toLowerCase(),
-                parseSymbol: (symbol) => symbol.toUpperCase(),
-            },
-            coinbase: {
-                name: 'Coinbase',
-                fee: 0.006, // Coinbase имеет более высокие комиссии
-                wsUrl: 'wss://ws-feed.exchange.coinbase.com',
-                formatSymbol: (coin) => coin.replace('USDT', '-USDT'),
-                parseSymbol: (symbol) => symbol.replace('-', ''),
-                subscribeMsg: (coins) => ({
-                    type: 'subscribe',
-                    product_ids: coins.map(c => c.replace('USDT', '-USDT')),
-                    channels: ['ticker']
-                }),
-            },
-            bitfinex: {
-                name: 'Bitfinex',
-                fee: 0.002,
-                wsUrl: 'wss://api-pub.bitfinex.com/ws/2',
-                formatSymbol: (coin) => `t${coin}`,
-                parseSymbol: (symbol) => symbol.replace('t', ''),
-            },
-            bingx: {
-                name: 'BingX',
-                fee: 0.001,
-                wsUrl: 'wss://open-api-ws.bingx.com/market',
-                formatSymbol: (coin) => coin,
-                parseSymbol: (symbol) => symbol,
-            },
+        // Комиссии бирж
+        const FEES = {
+            binance: 0.001,
+            bybit: 0.001,
+            okx: 0.001,
+            kucoin: 0.001,
+            bitget: 0.001,
+            huobi: 0.002,
+            coinbase: 0.006,
+            bitfinex: 0.002,
+            bingx: 0.001,
+        };
+
+        const EXCHANGE_NAMES = {
+            binance: 'Binance',
+            bybit: 'Bybit',
+            okx: 'OKX',
+            kucoin: 'KuCoin',
+            bitget: 'Bitget',
+            huobi: 'Huobi',
+            coinbase: 'Coinbase',
+            bitfinex: 'Bitfinex',
+            bingx: 'BingX',
         };
 
         // ═══════════════════════════════════════════════════════════════════
-        // СОСТОЯНИЕ ПРИЛОЖЕНИЯ
+        // СОСТОЯНИЕ
         // ═══════════════════════════════════════════════════════════════════
         
-        const state = {
-            prices: Object.fromEntries(Object.keys(EXCHANGES).map(k => [k, {}])),
-            connections: Object.fromEntries(Object.keys(EXCHANGES).map(k => [k, null])),
-            status: Object.fromEntries(Object.keys(EXCHANGES).map(k => [k, false])),
-            lastUpdate: 0,
-            updateTimer: null,
-            bitfinexChannels: new Map(),
-        };
-
-        // ═══════════════════════════════════════════════════════════════════
-        // DOM ЭЛЕМЕНТЫ
-        // ═══════════════════════════════════════════════════════════════════
+        const prices = {};
+        const wsConnections = {};
+        const connectionStatus = {};
+        const bitfinexChannels = new Map();
         
-        const DOM = {
-            content: document.getElementById('content'),
-            statusBar: document.getElementById('statusBar'),
-            refreshBtn: document.getElementById('refreshBtn'),
-        };
+        Object.keys(FEES).forEach(ex => {
+            prices[ex] = {};
+            connectionStatus[ex] = false;
+        });
 
-        // Telegram Web App
+        let lastUpdate = 0;
+        let updateTimer = null;
+
+        // DOM
+        const contentDiv = document.getElementById('content');
+        const statusBar = document.getElementById('statusBar');
+        const refreshBtn = document.getElementById('refreshBtn');
+
+        // Telegram
         const tg = window.Telegram?.WebApp;
         if (tg) { tg.ready(); tg.expand(); }
 
@@ -298,74 +188,546 @@
         // УТИЛИТЫ
         // ═══════════════════════════════════════════════════════════════════
         
-        const Utils = {
-            formatPrice: (num, decimals = 2) => {
-                if (!Number.isFinite(num)) return 'N/A';
-                return num.toFixed(decimals);
-            },
-            
-            formatCoin: (coin) => coin.replace('USDT', '/USDT'),
-            
-            capitalize: (str) => str.charAt(0).toUpperCase() + str.slice(1),
-            
-            log: (exchange, msg, data = '') => {
-                console.log(`[${exchange.toUpperCase()}] ${msg}`, data);
-            },
-        };
+        function log(exchange, msg, data = '') {
+            console.log(`[${exchange.toUpperCase()}] ${msg}`, data);
+        }
+
+        function formatPrice(num) {
+            if (!Number.isFinite(num)) return 'N/A';
+            return num.toFixed(2);
+        }
+
+        function savePrice(exchange, symbol, bid, ask) {
+            if (bid > 0 && ask > 0 && COINS.includes(symbol)) {
+                prices[exchange][symbol] = { bid, ask, timestamp: Date.now() };
+                scheduleUpdate();
+            }
+        }
 
         // ═══════════════════════════════════════════════════════════════════
         // РАСЧЕТ АРБИТРАЖА
         // ═══════════════════════════════════════════════════════════════════
         
-        const ArbitrageCalculator = {
-            /**
-             * Рассчитывает прибыль от арбитража
-             * @param {number} buyPrice - Цена покупки (ask на бирже покупки)
-             * @param {number} buyFee - Комиссия покупки (0.001 = 0.1%)
-             * @param {number} sellPrice - Цена продажи (bid на бирже продажи)
-             * @param {number} sellFee - Комиссия продажи
-             * @param {number} amount - Сумма в USDT
-             * @returns {number} Прибыль в USDT
-             */
-            calculate(buyPrice, buyFee, sellPrice, sellFee, amount) {
-                if (!buyPrice || !sellPrice || buyPrice <= 0 || sellPrice <= 0) {
-                    return -Infinity;
+        function calculateProfit(buyPrice, buyFee, sellPrice, sellFee, amount) {
+            if (!buyPrice || !sellPrice || buyPrice <= 0 || sellPrice <= 0) return -Infinity;
+            const afterBuyFee = amount * (1 - buyFee);
+            const crypto = afterBuyFee / buyPrice;
+            const gross = crypto * sellPrice;
+            const net = gross * (1 - sellFee);
+            return net - amount;
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // BINANCE WebSocket
+        // ═══════════════════════════════════════════════════════════════════
+        
+        function initBinance() {
+            if (wsConnections.binance?.readyState === WebSocket.OPEN) return;
+            
+            const ws = new WebSocket('wss://stream.binance.com:9443/ws/!bookTicker');
+            wsConnections.binance = ws;
+            
+            ws.onopen = () => {
+                log('binance', '✅ Connected');
+                connectionStatus.binance = true;
+                updateStatusBar();
+            };
+            
+            ws.onmessage = (e) => {
+                try {
+                    const d = JSON.parse(e.data);
+                    if (d.s && d.b && d.a) {
+                        savePrice('binance', d.s, parseFloat(d.b), parseFloat(d.a));
+                    }
+                } catch (err) {}
+            };
+            
+            ws.onerror = ws.onclose = () => {
+                connectionStatus.binance = false;
+                updateStatusBar();
+                setTimeout(initBinance, CONFIG.RECONNECT_DELAY);
+            };
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // BYBIT WebSocket
+        // ═══════════════════════════════════════════════════════════════════
+        
+        function initBybit() {
+            if (wsConnections.bybit?.readyState === WebSocket.OPEN) return;
+            
+            const ws = new WebSocket('wss://stream.bybit.com/v5/public/spot');
+            wsConnections.bybit = ws;
+            
+            ws.onopen = () => {
+                log('bybit', '✅ Connected');
+                connectionStatus.bybit = true;
+                updateStatusBar();
+                ws.send(JSON.stringify({
+                    op: 'subscribe',
+                    args: COINS.map(c => `orderbook.1.${c}`)
+                }));
+            };
+            
+            ws.onmessage = (e) => {
+                try {
+                    const d = JSON.parse(e.data);
+                    if (d.topic?.startsWith('orderbook.1.')) {
+                        const symbol = d.topic.replace('orderbook.1.', '');
+                        if (d.data?.b?.[0] && d.data?.a?.[0]) {
+                            savePrice('bybit', symbol, parseFloat(d.data.b[0][0]), parseFloat(d.data.a[0][0]));
+                        }
+                    }
+                } catch (err) {}
+            };
+            
+            ws.onerror = ws.onclose = () => {
+                connectionStatus.bybit = false;
+                updateStatusBar();
+                setTimeout(initBybit, CONFIG.RECONNECT_DELAY);
+            };
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // OKX WebSocket
+        // ═══════════════════════════════════════════════════════════════════
+        
+        function initOkx() {
+            if (wsConnections.okx?.readyState === WebSocket.OPEN) return;
+            
+            const ws = new WebSocket('wss://ws.okx.com:8443/ws/v5/public');
+            wsConnections.okx = ws;
+            
+            ws.onopen = () => {
+                log('okx', '✅ Connected');
+                connectionStatus.okx = true;
+                updateStatusBar();
+                ws.send(JSON.stringify({
+                    op: 'subscribe',
+                    args: COINS.map(c => ({ channel: 'tickers', instId: c.replace('USDT', '-USDT') }))
+                }));
+            };
+            
+            ws.onmessage = (e) => {
+                try {
+                    const d = JSON.parse(e.data);
+                    if (d.data?.[0]?.instId) {
+                        const symbol = d.data[0].instId.replace('-', '');
+                        savePrice('okx', symbol, parseFloat(d.data[0].bidPx), parseFloat(d.data[0].askPx));
+                    }
+                } catch (err) {}
+            };
+            
+            ws.onerror = ws.onclose = () => {
+                connectionStatus.okx = false;
+                updateStatusBar();
+                setTimeout(initOkx, CONFIG.RECONNECT_DELAY);
+            };
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // KUCOIN WebSocket (через REST для получения токена)
+        // ═══════════════════════════════════════════════════════════════════
+        
+        async function initKucoin() {
+            if (wsConnections.kucoin?.readyState === WebSocket.OPEN) return;
+            
+            try {
+                // Получаем токен для публичного WebSocket
+                const resp = await fetch('https://api.kucoin.com/api/v1/bullet-public', { method: 'POST' });
+                const json = await resp.json();
+                
+                if (json.code !== '200000' || !json.data?.token) {
+                    log('kucoin', '❌ Failed to get token');
+                    connectionStatus.kucoin = false;
+                    updateStatusBar();
+                    setTimeout(initKucoin, CONFIG.RECONNECT_DELAY);
+                    return;
                 }
                 
-                // 1. Покупка: USDT → Crypto
-                const afterBuyFee = amount * (1 - buyFee);
-                const cryptoAmount = afterBuyFee / buyPrice;
+                const { token, instanceServers } = json.data;
+                const endpoint = instanceServers[0].endpoint;
+                const ws = new WebSocket(`${endpoint}?token=${token}`);
+                wsConnections.kucoin = ws;
                 
-                // 2. Продажа: Crypto → USDT
-                const grossProceeds = cryptoAmount * sellPrice;
-                const netProceeds = grossProceeds * (1 - sellFee);
+                ws.onopen = () => {
+                    log('kucoin', '✅ Connected');
+                    connectionStatus.kucoin = true;
+                    updateStatusBar();
+                    
+                    // Подписываемся на тикеры
+                    COINS.forEach((coin, i) => {
+                        setTimeout(() => {
+                            if (ws.readyState === WebSocket.OPEN) {
+                                ws.send(JSON.stringify({
+                                    id: Date.now() + i,
+                                    type: 'subscribe',
+                                    topic: `/market/ticker:${coin.replace('USDT', '-USDT')}`,
+                                    privateChannel: false,
+                                    response: false
+                                }));
+                            }
+                        }, i * 30);
+                    });
+                };
                 
-                // 3. Итоговая прибыль
-                return netProceeds - amount;
-            },
+                ws.onmessage = (e) => {
+                    try {
+                        const d = JSON.parse(e.data);
+                        if (d.type === 'ping') {
+                            ws.send(JSON.stringify({ id: d.id, type: 'pong' }));
+                            return;
+                        }
+                        if (d.type === 'message' && d.data) {
+                            const symbol = d.topic?.split(':')[1]?.replace('-', '');
+                            if (symbol && d.data.bestBid && d.data.bestAsk) {
+                                savePrice('kucoin', symbol, parseFloat(d.data.bestBid), parseFloat(d.data.bestAsk));
+                            }
+                        }
+                    } catch (err) {}
+                };
+                
+                ws.onerror = ws.onclose = () => {
+                    connectionStatus.kucoin = false;
+                    updateStatusBar();
+                    setTimeout(initKucoin, CONFIG.RECONNECT_DELAY);
+                };
+            } catch (err) {
+                log('kucoin', '❌ Error:', err);
+                connectionStatus.kucoin = false;
+                updateStatusBar();
+                setTimeout(initKucoin, CONFIG.RECONNECT_DELAY);
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // BITGET WebSocket
+        // ═══════════════════════════════════════════════════════════════════
+        
+        function initBitget() {
+            if (wsConnections.bitget?.readyState === WebSocket.OPEN) return;
             
-            /**
-             * Находит лучшую арбитражную возможность для монеты
-             */
-            findBestOpportunity(coin, exchangeData) {
-                const validExchanges = exchangeData.filter(e => 
-                    e.data?.bid > 0 && e.data?.ask > 0 && 
-                    Number.isFinite(e.data.bid) && Number.isFinite(e.data.ask)
-                );
+            const ws = new WebSocket('wss://ws.bitget.com/v2/ws/public');
+            wsConnections.bitget = ws;
+            
+            ws.onopen = () => {
+                log('bitget', '✅ Connected');
+                connectionStatus.bitget = true;
+                updateStatusBar();
+                ws.send(JSON.stringify({
+                    op: 'subscribe',
+                    args: COINS.map(c => ({ instType: 'SPOT', channel: 'ticker', instId: c }))
+                }));
+            };
+            
+            ws.onmessage = (e) => {
+                try {
+                    const d = JSON.parse(e.data);
+                    if (d.data?.[0]) {
+                        const ticker = d.data[0];
+                        const symbol = ticker.instId || d.arg?.instId;
+                        if (symbol && ticker.bestBid && ticker.bestAsk) {
+                            savePrice('bitget', symbol, parseFloat(ticker.bestBid), parseFloat(ticker.bestAsk));
+                        }
+                    }
+                } catch (err) {}
+            };
+            
+            ws.onerror = ws.onclose = () => {
+                connectionStatus.bitget = false;
+                updateStatusBar();
+                setTimeout(initBitget, CONFIG.RECONNECT_DELAY);
+            };
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // HUOBI WebSocket (с распаковкой gzip)
+        // ═══════════════════════════════════════════════════════════════════
+        
+        function initHuobi() {
+            if (wsConnections.huobi?.readyState === WebSocket.OPEN) return;
+            
+            const ws = new WebSocket('wss://api.huobi.pro/ws');
+            wsConnections.huobi = ws;
+            
+            ws.onopen = () => {
+                log('huobi', '✅ Connected');
+                connectionStatus.huobi = true;
+                updateStatusBar();
+                COINS.forEach(coin => {
+                    ws.send(JSON.stringify({
+                        sub: `market.${coin.toLowerCase()}.bbo`,
+                        id: coin
+                    }));
+                });
+            };
+            
+            ws.onmessage = async (e) => {
+                try {
+                    let data;
+                    if (e.data instanceof Blob) {
+                        const arrayBuffer = await e.data.arrayBuffer();
+                        const uint8Array = new Uint8Array(arrayBuffer);
+                        const text = pako.inflate(uint8Array, { to: 'string' });
+                        data = JSON.parse(text);
+                    } else {
+                        data = JSON.parse(e.data);
+                    }
+                    
+                    // Отвечаем на ping
+                    if (data.ping) {
+                        ws.send(JSON.stringify({ pong: data.ping }));
+                        return;
+                    }
+                    
+                    // Обрабатываем BBO данные
+                    if (data.tick && data.ch) {
+                        const symbol = data.ch.replace('market.', '').replace('.bbo', '').toUpperCase();
+                        if (data.tick.bid && data.tick.ask) {
+                            savePrice('huobi', symbol, parseFloat(data.tick.bid), parseFloat(data.tick.ask));
+                        }
+                    }
+                } catch (err) {
+                    // log('huobi', 'Parse error:', err);
+                }
+            };
+            
+            ws.onerror = ws.onclose = () => {
+                connectionStatus.huobi = false;
+                updateStatusBar();
+                setTimeout(initHuobi, CONFIG.RECONNECT_DELAY);
+            };
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // COINBASE WebSocket
+        // ═══════════════════════════════════════════════════════════════════
+        
+        function initCoinbase() {
+            if (wsConnections.coinbase?.readyState === WebSocket.OPEN) return;
+            
+            const ws = new WebSocket('wss://ws-feed.exchange.coinbase.com');
+            wsConnections.coinbase = ws;
+            
+            ws.onopen = () => {
+                log('coinbase', '✅ Connected');
+                connectionStatus.coinbase = true;
+                updateStatusBar();
+                ws.send(JSON.stringify({
+                    type: 'subscribe',
+                    product_ids: COINS.map(c => c.replace('USDT', '-USDT')),
+                    channels: ['ticker']
+                }));
+            };
+            
+            ws.onmessage = (e) => {
+                try {
+                    const d = JSON.parse(e.data);
+                    if (d.type === 'ticker' && d.product_id && d.best_bid && d.best_ask) {
+                        const symbol = d.product_id.replace('-', '');
+                        savePrice('coinbase', symbol, parseFloat(d.best_bid), parseFloat(d.best_ask));
+                    }
+                } catch (err) {}
+            };
+            
+            ws.onerror = ws.onclose = () => {
+                connectionStatus.coinbase = false;
+                updateStatusBar();
+                setTimeout(initCoinbase, CONFIG.RECONNECT_DELAY);
+            };
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // BITFINEX WebSocket
+        // ═══════════════════════════════════════════════════════════════════
+        
+        function initBitfinex() {
+            if (wsConnections.bitfinex?.readyState === WebSocket.OPEN) return;
+            
+            const ws = new WebSocket('wss://api-pub.bitfinex.com/ws/2');
+            wsConnections.bitfinex = ws;
+            bitfinexChannels.clear();
+            
+            ws.onopen = () => {
+                log('bitfinex', '✅ Connected');
+                connectionStatus.bitfinex = true;
+                updateStatusBar();
+                COINS.forEach((coin, i) => {
+                    setTimeout(() => {
+                        if (ws.readyState === WebSocket.OPEN) {
+                            ws.send(JSON.stringify({
+                                event: 'subscribe',
+                                channel: 'ticker',
+                                symbol: `t${coin}`
+                            }));
+                        }
+                    }, i * 50);
+                });
+            };
+            
+            ws.onmessage = (e) => {
+                try {
+                    const d = JSON.parse(e.data);
+                    
+                    // Сохраняем маппинг channel -> symbol
+                    if (d.event === 'subscribed' && d.chanId && d.symbol) {
+                        bitfinexChannels.set(d.chanId, d.symbol.replace('t', ''));
+                        return;
+                    }
+                    
+                    // Обрабатываем тикер [chanId, [bid, bid_size, ask, ask_size, ...]]
+                    if (Array.isArray(d) && d.length >= 2 && Array.isArray(d[1]) && d[1].length >= 4) {
+                        const symbol = bitfinexChannels.get(d[0]);
+                        if (symbol) {
+                            savePrice('bitfinex', symbol, parseFloat(d[1][0]), parseFloat(d[1][2]));
+                        }
+                    }
+                } catch (err) {}
+            };
+            
+            ws.onerror = ws.onclose = () => {
+                connectionStatus.bitfinex = false;
+                updateStatusBar();
+                setTimeout(initBitfinex, CONFIG.RECONNECT_DELAY);
+            };
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // BINGX WebSocket
+        // ═══════════════════════════════════════════════════════════════════
+        
+        function initBingx() {
+            if (wsConnections.bingx?.readyState === WebSocket.OPEN) return;
+            
+            const ws = new WebSocket('wss://open-api-ws.bingx.com/market');
+            wsConnections.bingx = ws;
+            
+            ws.onopen = () => {
+                log('bingx', '✅ Connected');
+                connectionStatus.bingx = true;
+                updateStatusBar();
+                COINS.forEach((coin, i) => {
+                    setTimeout(() => {
+                        if (ws.readyState === WebSocket.OPEN) {
+                            // BingX использует формат BTC-USDT
+                            const symbol = coin.replace('USDT', '-USDT');
+                            ws.send(JSON.stringify({
+                                id: Date.now().toString(),
+                                reqType: 'sub',
+                                dataType: `${symbol}@bookTicker`
+                            }));
+                        }
+                    }, i * 30);
+                });
+            };
+            
+            ws.onmessage = async (e) => {
+                try {
+                    let data;
+                    if (e.data instanceof Blob) {
+                        // BingX может отправлять gzip
+                        const arrayBuffer = await e.data.arrayBuffer();
+                        const uint8Array = new Uint8Array(arrayBuffer);
+                        try {
+                            const text = pako.inflate(uint8Array, { to: 'string' });
+                            data = JSON.parse(text);
+                        } catch {
+                            const text = new TextDecoder().decode(uint8Array);
+                            data = JSON.parse(text);
+                        }
+                    } else {
+                        data = JSON.parse(e.data);
+                    }
+                    
+                    // Ping/pong
+                    if (data.ping) {
+                        ws.send(JSON.stringify({ pong: data.ping }));
+                        return;
+                    }
+                    
+                    // Данные тикера
+                    if (data.data) {
+                        const d = data.data;
+                        const symbol = (d.s || d.symbol || '').replace('-', '');
+                        if (symbol && d.b && d.a) {
+                            savePrice('bingx', symbol, parseFloat(d.b), parseFloat(d.a));
+                        } else if (symbol && d.bidPrice && d.askPrice) {
+                            savePrice('bingx', symbol, parseFloat(d.bidPrice), parseFloat(d.askPrice));
+                        }
+                    }
+                } catch (err) {}
+            };
+            
+            ws.onerror = ws.onclose = () => {
+                connectionStatus.bingx = false;
+                updateStatusBar();
+                setTimeout(initBingx, CONFIG.RECONNECT_DELAY);
+            };
+        }
+
+        // ═══════════════════════════════════════════════════════════════════
+        // UI
+        // ═══════════════════════════════════════════════════════════════════
+        
+        function updateStatusBar() {
+            const connected = Object.values(connectionStatus).filter(Boolean).length;
+            const total = Object.keys(connectionStatus).length;
+            
+            let className = 'disconnected';
+            let text = `❌ Нет подключений`;
+            
+            if (connected === total) {
+                className = 'connected';
+                text = `✅ Все ${total} бирж подключены`;
+            } else if (connected > 0) {
+                className = 'connecting';
+                text = `⏳ Подключение: ${connected}/${total} бирж`;
+            }
+            
+            statusBar.className = `status-bar ${className}`;
+            statusBar.textContent = text;
+        }
+
+        function scheduleUpdate() {
+            const now = Date.now();
+            if (now - lastUpdate < CONFIG.UPDATE_THROTTLE) {
+                if (updateTimer) clearTimeout(updateTimer);
+                updateTimer = setTimeout(() => {
+                    lastUpdate = Date.now();
+                    render();
+                }, CONFIG.UPDATE_THROTTLE);
+                return;
+            }
+            lastUpdate = now;
+            if (updateTimer) clearTimeout(updateTimer);
+            render();
+        }
+
+        function render() {
+            const results = [];
+            const exchangeIds = Object.keys(FEES);
+            
+            for (const coin of COINS) {
+                const exchangeData = exchangeIds
+                    .map(id => ({
+                        id,
+                        name: EXCHANGE_NAMES[id],
+                        fee: FEES[id],
+                        data: prices[id][coin]
+                    }))
+                    .filter(e => e.data?.bid > 0 && e.data?.ask > 0);
                 
-                if (validExchanges.length < 2) return null;
+                if (exchangeData.length < 2) continue;
                 
                 let best = { profit: -Infinity, scenario: null };
                 
-                for (const buyEx of validExchanges) {
-                    for (const sellEx of validExchanges) {
+                for (const buyEx of exchangeData) {
+                    for (const sellEx of exchangeData) {
                         if (buyEx.id === sellEx.id) continue;
                         
-                        const profit = this.calculate(
-                            buyEx.data.ask,
-                            buyEx.fee,
-                            sellEx.data.bid,
-                            sellEx.fee,
+                        const profit = calculateProfit(
+                            buyEx.data.ask, buyEx.fee,
+                            sellEx.data.bid, sellEx.fee,
                             CONFIG.TRADE_AMOUNT
                         );
                         
@@ -375,462 +737,126 @@
                                 scenario: {
                                     buyExchange: buyEx.name,
                                     sellExchange: sellEx.name,
-                                    buyPrice: buyEx.data.ask,
-                                    sellPrice: sellEx.data.bid,
                                 }
                             };
                         }
                     }
                 }
                 
-                return best.scenario ? {
-                    coin,
-                    profit: best.profit,
-                    scenario: best.scenario,
-                    exchanges: validExchanges,
-                } : null;
+                if (best.scenario) {
+                    results.push({
+                        coin,
+                        profit: best.profit,
+                        scenario: best.scenario,
+                        exchanges: exchangeData,
+                    });
+                }
             }
-        };
-
-        // ═══════════════════════════════════════════════════════════════════
-        // WEBSOCKET МЕНЕДЖЕР
-        // ═══════════════════════════════════════════════════════════════════
-        
-        const WSManager = {
-            init(exchangeId) {
-                const config = EXCHANGES[exchangeId];
-                if (!config?.wsUrl) return;
-                
-                if (state.connections[exchangeId]?.readyState === WebSocket.OPEN) return;
-                
-                try {
-                    const ws = new WebSocket(config.wsUrl);
-                    state.connections[exchangeId] = ws;
-                    
-                    ws.onopen = () => this.onOpen(exchangeId, ws, config);
-                    ws.onmessage = (e) => this.onMessage(exchangeId, e, config);
-                    ws.onerror = () => this.onError(exchangeId);
-                    ws.onclose = () => this.onClose(exchangeId);
-                } catch (err) {
-                    console.error(`[${exchangeId}] WebSocket creation failed:`, err);
-                    state.status[exchangeId] = false;
-                    UI.updateStatusBar();
-                }
-            },
             
-            onOpen(exchangeId, ws, config) {
-                Utils.log(exchangeId, '✅ Connected');
-                state.status[exchangeId] = true;
-                UI.updateStatusBar();
-                
-                // Подписка на данные
-                this.subscribe(exchangeId, ws, config);
-            },
+            results.sort((a, b) => b.profit - a.profit);
+            const topResults = results.slice(0, CONFIG.TOP_RESULTS);
             
-            subscribe(exchangeId, ws, config) {
-                switch (exchangeId) {
-                    case 'binance':
-                        // Binance использует stream для всех тикеров автоматически
-                        break;
-                        
-                    case 'bybit':
-                        ws.send(JSON.stringify({
-                            op: 'subscribe',
-                            args: COINS.map(c => `orderbook.1.${c}`)
-                        }));
-                        break;
-                        
-                    case 'okx':
-                        ws.send(JSON.stringify({
-                            op: 'subscribe',
-                            args: COINS.map(c => ({ 
-                                channel: 'tickers', 
-                                instId: c.replace('USDT', '-USDT') 
-                            }))
-                        }));
-                        break;
-                        
-                    case 'kucoin':
-                        // KuCoin требует постепенной подписки
-                        setTimeout(() => {
-                            COINS.forEach((coin, i) => {
-                                setTimeout(() => {
-                                    if (ws.readyState === WebSocket.OPEN) {
-                                        ws.send(JSON.stringify({
-                                            id: Date.now() + i,
-                                            type: 'subscribe',
-                                            topic: `/market/ticker:${coin.replace('USDT', '-USDT')}`,
-                                            privateChannel: false,
-                                            response: true
-                                        }));
-                                    }
-                                }, i * 50);
-                            });
-                        }, 500);
-                        break;
-                        
-                    case 'bitget':
-                        COINS.forEach(coin => {
-                            ws.send(JSON.stringify({
-                                op: 'subscribe',
-                                args: [{ instType: 'SPOT', channel: 'ticker', instId: coin }]
-                            }));
-                        });
-                        break;
-                        
-                    case 'huobi':
-                        COINS.forEach(coin => {
-                            ws.send(JSON.stringify({
-                                sub: `market.${coin.toLowerCase()}.ticker`,
-                                id: `${coin}_${Date.now()}`
-                            }));
-                        });
-                        break;
-                        
-                    case 'coinbase':
-                        ws.send(JSON.stringify({
-                            type: 'subscribe',
-                            product_ids: COINS.map(c => c.replace('USDT', '-USDT')),
-                            channels: ['ticker']
-                        }));
-                        break;
-                        
-                    case 'bitfinex':
-                        COINS.forEach(coin => {
-                            ws.send(JSON.stringify({
-                                event: 'subscribe',
-                                channel: 'ticker',
-                                symbol: `t${coin}`
-                            }));
-                        });
-                        break;
-                        
-                    case 'bingx':
-                        COINS.forEach(coin => {
-                            ws.send(JSON.stringify({
-                                id: Date.now().toString(),
-                                reqType: 'sub',
-                                dataType: `${coin}@ticker`
-                            }));
-                        });
-                        break;
-                }
-            },
-            
-            async onMessage(exchangeId, event, config) {
-                try {
-                    let data;
-                    
-                    // Обработка Blob данных (Huobi, BingX)
-                    if (event.data instanceof Blob) {
-                        const text = await event.data.text();
-                        data = JSON.parse(text);
-                    } else {
-                        data = JSON.parse(event.data);
-                    }
-                    
-                    // Парсинг данных в зависимости от биржи
-                    const parsed = this.parseMessage(exchangeId, data);
-                    
-                    if (parsed?.symbol && parsed?.bid && parsed?.ask) {
-                        state.prices[exchangeId][parsed.symbol] = {
-                            bid: parsed.bid,
-                            ask: parsed.ask,
-                            timestamp: Date.now()
-                        };
-                        UI.scheduleUpdate();
-                    }
-                } catch (err) {
-                    // Игнорируем ошибки парсинга для Blob
-                }
-            },
-            
-            parseMessage(exchangeId, data) {
-                switch (exchangeId) {
-                    case 'binance':
-                        if (data.s && data.b && data.a && COINS.includes(data.s)) {
-                            return { symbol: data.s, bid: parseFloat(data.b), ask: parseFloat(data.a) };
-                        }
-                        break;
-                        
-                    case 'bybit':
-                        if (data.topic?.startsWith('orderbook.1.')) {
-                            const symbol = data.topic.replace('orderbook.1.', '');
-                            if (COINS.includes(symbol) && data.data?.b?.[0] && data.data?.a?.[0]) {
-                                return { symbol, bid: parseFloat(data.data.b[0][0]), ask: parseFloat(data.data.a[0][0]) };
-                            }
-                        }
-                        break;
-                        
-                    case 'okx':
-                        if (data.data?.[0]?.instId) {
-                            const symbol = data.data[0].instId.replace('-', '');
-                            if (COINS.includes(symbol)) {
-                                return { symbol, bid: parseFloat(data.data[0].bidPx), ask: parseFloat(data.data[0].askPx) };
-                            }
-                        }
-                        break;
-                        
-                    case 'kucoin':
-                        // Обработка ping/pong
-                        if (data.type === 'ping') {
-                            state.connections[exchangeId]?.send(JSON.stringify({ type: 'pong', id: data.id }));
-                            return null;
-                        }
-                        if (data.type === 'message' && data.data) {
-                            const symbol = data.topic?.split(':')[1]?.replace('-', '') || data.data.symbol?.replace('-', '');
-                            if (symbol && COINS.includes(symbol)) {
-                                const bid = parseFloat(data.data.bestBid || data.data.buy || 0);
-                                const ask = parseFloat(data.data.bestAsk || data.data.sell || 0);
-                                if (bid > 0 && ask > 0) return { symbol, bid, ask };
-                            }
-                        }
-                        break;
-                        
-                    case 'bitget':
-                        if (data.data?.[0] || data.data) {
-                            const ticker = Array.isArray(data.data) ? data.data[0] : data.data;
-                            const symbol = ticker?.instId || data.arg?.instId;
-                            if (symbol && COINS.includes(symbol)) {
-                                const bid = parseFloat(ticker.bestBid || ticker.bidPr || 0);
-                                const ask = parseFloat(ticker.bestAsk || ticker.askPr || 0);
-                                if (bid > 0 && ask > 0) return { symbol, bid, ask };
-                            }
-                        }
-                        break;
-                        
-                    case 'huobi':
-                        // Обработка ping
-                        if (data.ping) {
-                            state.connections[exchangeId]?.send(JSON.stringify({ pong: data.ping }));
-                            return null;
-                        }
-                        if (data.tick && data.ch) {
-                            const symbol = data.ch.replace('market.', '').replace('.ticker', '').toUpperCase();
-                            if (COINS.includes(symbol)) {
-                                const bid = Array.isArray(data.tick.bid) ? data.tick.bid[0] : data.tick.bid;
-                                const ask = Array.isArray(data.tick.ask) ? data.tick.ask[0] : data.tick.ask;
-                                if (bid > 0 && ask > 0) return { symbol, bid: parseFloat(bid), ask: parseFloat(ask) };
-                            }
-                        }
-                        break;
-                        
-                    case 'coinbase':
-                        if (data.type === 'ticker' && data.product_id) {
-                            const symbol = data.product_id.replace('-', '');
-                            if (COINS.includes(symbol) && data.best_bid && data.best_ask) {
-                                return { symbol, bid: parseFloat(data.best_bid), ask: parseFloat(data.best_ask) };
-                            }
-                        }
-                        break;
-                        
-                    case 'bitfinex':
-                        // Обработка подписки
-                        if (data.event === 'subscribed' && data.chanId && data.symbol) {
-                            state.bitfinexChannels.set(data.chanId, data.symbol.replace('t', ''));
-                            return null;
-                        }
-                        // Обработка тикера
-                        if (Array.isArray(data) && data.length >= 2 && Array.isArray(data[1]) && data[1].length >= 10) {
-                            const symbol = state.bitfinexChannels.get(data[0]);
-                            if (symbol && COINS.includes(symbol)) {
-                                return { symbol, bid: parseFloat(data[1][0]), ask: parseFloat(data[1][2]) };
-                            }
-                        }
-                        break;
-                        
-                    case 'bingx':
-                        if (data.data?.s && data.data?.b && data.data?.a) {
-                            const symbol = data.data.s;
-                            if (COINS.includes(symbol)) {
-                                return { symbol, bid: parseFloat(data.data.b), ask: parseFloat(data.data.a) };
-                            }
-                        }
-                        break;
-                }
-                return null;
-            },
-            
-            onError(exchangeId) {
-                state.status[exchangeId] = false;
-                UI.updateStatusBar();
-            },
-            
-            onClose(exchangeId) {
-                Utils.log(exchangeId, '❌ Disconnected, reconnecting...');
-                state.status[exchangeId] = false;
-                UI.updateStatusBar();
-                setTimeout(() => this.init(exchangeId), CONFIG.RECONNECT_DELAY);
-            },
-            
-            initAll() {
-                Object.keys(EXCHANGES).forEach(id => this.init(id));
-            },
-            
-            closeAll() {
-                Object.keys(state.connections).forEach(id => {
-                    if (state.connections[id]) {
-                        state.connections[id].close();
-                        state.connections[id] = null;
-                    }
-                });
-            }
-        };
-
-        // ═══════════════════════════════════════════════════════════════════
-        // UI МЕНЕДЖЕР
-        // ═══════════════════════════════════════════════════════════════════
-        
-        const UI = {
-            updateStatusBar() {
-                const connected = Object.values(state.status).filter(Boolean).length;
-                const total = Object.keys(EXCHANGES).length;
-                
-                let className = 'disconnected';
-                let text = `❌ Нет подключений`;
-                
-                if (connected === total) {
-                    className = 'connected';
-                    text = `✅ Все ${total} бирж подключены`;
-                } else if (connected > 0) {
-                    className = 'connecting';
-                    text = `⏳ Подключение: ${connected}/${total} бирж`;
-                }
-                
-                DOM.statusBar.className = `status-bar ${className}`;
-                DOM.statusBar.textContent = text;
-            },
-            
-            scheduleUpdate() {
-                const now = Date.now();
-                if (now - state.lastUpdate < CONFIG.UPDATE_THROTTLE) {
-                    if (state.updateTimer) clearTimeout(state.updateTimer);
-                    state.updateTimer = setTimeout(() => {
-                        state.lastUpdate = Date.now();
-                        this.render();
-                    }, CONFIG.UPDATE_THROTTLE);
-                    return;
-                }
-                
-                state.lastUpdate = now;
-                if (state.updateTimer) clearTimeout(state.updateTimer);
-                this.render();
-            },
-            
-            render() {
-                const results = [];
-                
-                for (const coin of COINS) {
-                    const exchangeData = Object.entries(state.prices)
-                        .map(([id, prices]) => ({
-                            id,
-                            name: EXCHANGES[id].name,
-                            fee: EXCHANGES[id].fee,
-                            data: prices[coin]
-                        }))
-                        .filter(e => e.data?.bid > 0 && e.data?.ask > 0);
-                    
-                    if (exchangeData.length >= 2) {
-                        const opportunity = ArbitrageCalculator.findBestOpportunity(coin, exchangeData);
-                        if (opportunity) results.push(opportunity);
-                    }
-                }
-                
-                // Сортировка по прибыли
-                results.sort((a, b) => b.profit - a.profit);
-                const topResults = results.slice(0, CONFIG.TOP_RESULTS);
-                
-                if (topResults.length === 0) {
-                    const totalPrices = Object.values(state.prices).reduce((sum, p) => sum + Object.keys(p).length, 0);
-                    DOM.content.innerHTML = `
-                        <div class="loading">
-                            ${totalPrices === 0 
-                                ? '⏳ Ожидание данных с бирж...' 
-                                : '⚠️ Недостаточно данных для расчета арбитража'}
-                            <br><br>
-                            Получено цен: ${totalPrices}
-                        </div>
-                    `;
-                    return;
-                }
-                
-                const positiveCount = topResults.filter(r => r.profit >= 0).length;
-                
-                let html = `
-                    <div class="summary">
-                        🏆 ТОП-${topResults.length} возможностей | ${positiveCount} с прибылью
+            if (topResults.length === 0) {
+                const totalPrices = Object.values(prices).reduce((sum, p) => sum + Object.keys(p).length, 0);
+                contentDiv.innerHTML = `
+                    <div class="loading">
+                        ${totalPrices === 0 
+                            ? '⏳ Ожидание данных с бирж...' 
+                            : '⚠️ Недостаточно данных для расчета'}
+                        <br><br>Получено цен: ${totalPrices}
                     </div>
-                    <div class="arbitrage-list">
                 `;
+                return;
+            }
+            
+            const positiveCount = topResults.filter(r => r.profit >= 0).length;
+            
+            let html = `
+                <div class="summary">🏆 ТОП-${topResults.length} возможностей | ${positiveCount} с прибылью</div>
+                <div class="arbitrage-list">
+            `;
+            
+            for (const result of topResults) {
+                const isPositive = result.profit >= 0;
+                const profitText = isPositive ? `+${formatPrice(result.profit)}` : formatPrice(result.profit);
                 
-                for (const result of topResults) {
-                    const isPositive = result.profit >= 0;
-                    const profitText = isPositive ? `+${Utils.formatPrice(result.profit)}` : Utils.formatPrice(result.profit);
-                    
-                    let exchangesHtml = '';
-                    for (const ex of result.exchanges) {
-                        exchangesHtml += `
-                            <div class="exchange-row">
-                                <span class="exchange-name">${ex.name}:</span>
-                                <span class="exchange-prices">
-                                    Покупка ${Utils.formatPrice(ex.data.ask)} | Продажа ${Utils.formatPrice(ex.data.bid)}
-                                </span>
-                            </div>
-                        `;
-                    }
-                    
-                    html += `
-                        <div class="arbitrage-card ${isPositive ? 'positive' : 'negative'}">
-                            <div class="card-header">
-                                <span class="coin-symbol">${Utils.formatCoin(result.coin)}</span>
-                                <span class="profit-badge ${isPositive ? 'positive' : 'negative'}">${profitText} USDT</span>
-                            </div>
-                            <div class="exchanges-grid">${exchangesHtml}</div>
-                            <div class="scenario">
-                                💡 ${result.scenario.buyExchange} → ${result.scenario.sellExchange} 
-                                (${Utils.formatPrice(result.profit)} USDT)
-                            </div>
+                let exchangesHtml = '';
+                for (const ex of result.exchanges) {
+                    exchangesHtml += `
+                        <div class="exchange-row">
+                            <span class="exchange-name">${ex.name}:</span>
+                            <span class="exchange-prices">
+                                Покупка ${formatPrice(ex.data.ask)} | Продажа ${formatPrice(ex.data.bid)}
+                            </span>
                         </div>
                     `;
                 }
                 
-                html += '</div>';
-                DOM.content.innerHTML = html;
+                html += `
+                    <div class="arbitrage-card ${isPositive ? 'positive' : 'negative'}">
+                        <div class="card-header">
+                            <span class="coin-symbol">${result.coin.replace('USDT', '/USDT')}</span>
+                            <span class="profit-badge ${isPositive ? 'positive' : 'negative'}">${profitText} USDT</span>
+                        </div>
+                        <div class="exchanges-grid">${exchangesHtml}</div>
+                        <div class="scenario">
+                            💡 ${result.scenario.buyExchange} → ${result.scenario.sellExchange} 
+                            (${formatPrice(result.profit)} USDT)
+                        </div>
+                    </div>
+                `;
             }
-        };
+            
+            html += '</div>';
+            contentDiv.innerHTML = html;
+        }
 
         // ═══════════════════════════════════════════════════════════════════
         // ИНИЦИАЛИЗАЦИЯ
         // ═══════════════════════════════════════════════════════════════════
         
-        function init() {
+        function initAll() {
             console.log('🚀 Инициализация арбитражного приложения...');
-            console.log(`📊 Монет: ${COINS.length}, Бирж: ${Object.keys(EXCHANGES).length}`);
+            console.log(`📊 Монет: ${COINS.length}, Бирж: ${Object.keys(FEES).length}`);
             
-            UI.updateStatusBar();
-            WSManager.initAll();
+            updateStatusBar();
             
-            DOM.refreshBtn.onclick = () => {
-                console.log('🔄 Переподключение...');
-                WSManager.closeAll();
-                
-                // Очистка состояния
-                Object.keys(state.prices).forEach(k => state.prices[k] = {});
-                Object.keys(state.status).forEach(k => state.status[k] = false);
-                state.bitfinexChannels.clear();
-                
-                DOM.content.innerHTML = '<div class="loading">⏳ Переподключение к биржам...</div>';
-                UI.updateStatusBar();
-                
-                setTimeout(() => WSManager.initAll(), 1000);
-            };
+            initBinance();
+            initBybit();
+            initOkx();
+            initKucoin();
+            initBitget();
+            initHuobi();
+            initCoinbase();
+            initBitfinex();
+            initBingx();
         }
 
-        // Запуск после загрузки DOM
+        function closeAll() {
+            Object.values(wsConnections).forEach(ws => {
+                if (ws) ws.close();
+            });
+        }
+
+        refreshBtn.onclick = () => {
+            console.log('🔄 Переподключение...');
+            closeAll();
+            
+            Object.keys(prices).forEach(k => prices[k] = {});
+            Object.keys(connectionStatus).forEach(k => connectionStatus[k] = false);
+            bitfinexChannels.clear();
+            
+            contentDiv.innerHTML = '<div class="loading">⏳ Переподключение к биржам...</div>';
+            updateStatusBar();
+            
+            setTimeout(initAll, 1000);
+        };
+
+        // Запуск
         if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', init);
+            document.addEventListener('DOMContentLoaded', initAll);
         } else {
-            init();
+            initAll();
         }
     </script>
 </body>
