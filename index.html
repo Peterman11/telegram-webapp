@@ -284,7 +284,7 @@
             }
         }
 
-        function calculateWeightedPrice(basePrice, amount, liquidity) {
+        function calculateWeightedPrice(basePrice, amount, liquidity, isBuy = true) {
             if (amount < liquidity * 0.1) {
                 return basePrice;
             }
@@ -292,7 +292,11 @@
             const utilization = Math.min(amount / liquidity, 1);
             const slippage = utilization * utilization * 0.005;
             
-            return basePrice * (1 + slippage);
+            if (isBuy) {
+                return basePrice * (1 + slippage);
+            } else {
+                return basePrice * (1 - slippage);
+            }
         }
 
         function calculateOptimalEntryAmount(coin, buyPrice, sellPrice, buyFee, sellFee, maxSlippage = 0.1) {
@@ -309,8 +313,8 @@
             for (const amount of testAmounts) {
                 if (amount > liquidity * 2) break;
                 
-                const actualBuyPrice = calculateWeightedPrice(buyPrice, amount, liquidity);
-                const actualSellPrice = calculateWeightedPrice(sellPrice, amount, liquidity);
+                const actualBuyPrice = calculateWeightedPrice(buyPrice, amount, liquidity, true);
+                const actualSellPrice = calculateWeightedPrice(sellPrice, amount, liquidity, false);
                 
                 const buySlippage = ((actualBuyPrice - buyPrice) / buyPrice) * 100;
                 const sellSlippage = ((sellPrice - actualSellPrice) / sellPrice) * 100;
@@ -344,8 +348,8 @@
             
             const recommendations = CONFIG.AMOUNTS.map(amount => {
                 const liquidity = estimateLiquidity(coin, buyPrice);
-                const actualBuyPrice = calculateWeightedPrice(buyPrice, amount, liquidity);
-                const actualSellPrice = calculateWeightedPrice(sellPrice, amount, liquidity);
+                const actualBuyPrice = calculateWeightedPrice(buyPrice, amount, liquidity, true);
+                const actualSellPrice = calculateWeightedPrice(sellPrice, amount, liquidity, false);
                 
                 const profit = calculateProfit(actualBuyPrice, buyFee, actualSellPrice, sellFee, amount);
                 const buySlippage = ((actualBuyPrice - buyPrice) / buyPrice) * 100;
