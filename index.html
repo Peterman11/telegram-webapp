@@ -1195,12 +1195,11 @@
                         
                         <div style="margin-top: 10px; padding: 10px; background: rgba(128, 128, 128, 0.05); border-radius: 8px; font-size: 12px; color: var(--hint-color);">
                             <div style="margin-bottom: 4px;"><strong>📋 Детали расчета (на 100 USDT):</strong></div>
-                            <div style="margin-bottom: 2px;">🛒 Покупка на ${result.scenario.buyExchange}: ${formatPrice(result.buyPrice)} USDT (ASK)</div>
-                            <div style="margin-bottom: 2px;">💸 Продажа на ${result.scenario.sellExchange}: ${formatPrice(result.sellPrice)} USDT (BID)</div>
-                            <div style="margin-bottom: 2px;">📊 Разница цен: ${formatPrice(result.sellPrice - result.buyPrice)} USDT</div>
-                            <div style="margin-bottom: 2px;">💳 Комиссии: ${(result.buyEx.fee * 100).toFixed(2)}% + ${(result.sellEx.fee * 100).toFixed(2)}%</div>
+                            <div style="margin-bottom: 2px;">🛒 Покупка на ${result.scenario.buyExchange}: ${formatPrice(result.buyPrice)} USDT <span style="opacity: 0.7;">(дешевле)</span></div>
+                            <div style="margin-bottom: 2px;">💸 Продажа на ${result.scenario.sellExchange}: ${formatPrice(result.sellPrice)} USDT <span style="opacity: 0.7;">(дороже)</span></div>
+                            <div style="margin-bottom: 2px;">📊 Разница: ${formatPrice(result.sellPrice - result.buyPrice)} USDT/монета × ${formatPrice(100 / result.buyPrice)} монет</div>
+                            <div style="margin-bottom: 2px;">💳 Комиссии: ${(result.buyEx.fee * 100).toFixed(2)}% + ${(result.sellEx.fee * 100).toFixed(2)}% = ${((result.buyEx.fee + result.sellEx.fee) * 100).toFixed(2)}%</div>
                             <div style="color: ${isPositive ? 'var(--positive-color)' : 'var(--negative-color)'}; font-weight: 600;">💰 Чистая прибыль: ${profitText} USDT</div>
-                            <div style="margin-top: 4px; font-size: 11px; font-style: italic;">⚠️ Важно: покупка по ASK (выше), продажа по BID (ниже)</div>
                         </div>
                         
                         <div class="recommendation">
