@@ -76,10 +76,18 @@
         .exchange-prices { font-weight: 500; }
         .scenario {
             margin-top: 10px;
-            padding-top: 10px;
-            border-top: 1px solid rgba(128, 128, 128, 0.2);
-            font-size: 13px;
-            color: var(--hint-color);
+            padding: 10px 12px;
+            background: linear-gradient(135deg, rgba(76, 175, 80, 0.15), rgba(76, 175, 80, 0.05));
+            border-radius: 8px;
+            border-left: 3px solid var(--positive-color);
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--positive-color);
+        }
+        .scenario.negative-scenario {
+            background: linear-gradient(135deg, rgba(255, 68, 68, 0.15), rgba(255, 68, 68, 0.05));
+            border-left-color: var(--negative-color);
+            color: var(--negative-color);
         }
         .summary {
             text-align: center;
@@ -780,38 +788,36 @@
         function initKraken() {
             if (wsConnections.kraken?.readyState === WebSocket.OPEN) return;
             
-            const ws = new WebSocket('wss://ws.kraken.com');
+            const ws = new WebSocket('wss://ws.kraken.com/v2');
             wsConnections.kraken = ws;
             
             ws.onopen = () => {
                 log('kraken', '✅ Connected');
                 connectionStatus.kraken = true;
                 updateStatusBar();
-                COINS.forEach((coin, i) => {
-                    setTimeout(() => {
-                        if (ws.readyState === WebSocket.OPEN) {
-                            const base = coin.replace('USDT', '');
-                            const krakenPair = (base === 'BTC' ? 'XBT' : base) + '/USDT';
-                            ws.send(JSON.stringify({
-                                event: 'subscribe',
-                                pair: [krakenPair],
-                                subscription: { name: 'ticker' }
-                            }));
-                        }
-                    }, i * 100);
+                const krakenSymbols = COINS.map(c => {
+                    const base = c.replace('USDT', '');
+                    return (base === 'BTC' ? 'XBT' : base) + '/USDT';
                 });
+                ws.send(JSON.stringify({
+                    method: 'subscribe',
+                    params: {
+                        channel: 'ticker',
+                        symbol: krakenSymbols
+                    }
+                }));
             };
             
             ws.onmessage = (e) => {
                 try {
                     const d = JSON.parse(e.data);
-                    if (Array.isArray(d) && d.length >= 4 && Array.isArray(d[1])) {
-                        const ticker = d[1];
-                        const pair = d[3].replace('XBT', 'BTC');
-                        const symbol = pair.replace('/', '');
-                        if (ticker.length >= 4) {
-                            savePrice('kraken', symbol, parseFloat(ticker[0]), parseFloat(ticker[2]));
-                        }
+                    if (d.channel === 'ticker' && d.data && d.data.length > 0) {
+                        d.data.forEach(ticker => {
+                            const pair = (ticker.symbol || '').replace('XBT', 'BTC').replace('/', '');
+                            if (pair && ticker.bid && ticker.ask) {
+                                savePrice('kraken', pair, parseFloat(ticker.bid), parseFloat(ticker.ask));
+                            }
+                        });
                     }
                 } catch (err) {}
             };
@@ -873,29 +879,31 @@
         function initPoloniex() {
             if (wsConnections.poloniex?.readyState === WebSocket.OPEN) return;
             
-            const ws = new WebSocket('wss://api.poloniex.com/markets/ticker');
+            const ws = new WebSocket('wss://ws.poloniex.com/ws/public');
             wsConnections.poloniex = ws;
             
             ws.onopen = () => {
                 log('poloniex', '✅ Connected');
                 connectionStatus.poloniex = true;
                 updateStatusBar();
+                const poloniexSymbols = COINS.map(c => c.replace('USDT', '_USDT'));
+                ws.send(JSON.stringify({
+                    event: 'subscribe',
+                    channel: ['ticker'],
+                    symbols: poloniexSymbols
+                }));
             };
             
             ws.onmessage = (e) => {
                 try {
                     const d = JSON.parse(e.data);
-                    if (Array.isArray(d) && d[0] === 1002) {
-                        const tickers = d[2];
-                        if (tickers) {
-                            Object.keys(tickers).forEach(pair => {
-                                const symbol = pair.replace('_', '');
-                                const ticker = tickers[pair];
-                                if (ticker && ticker.lowestAsk && ticker.highestBid) {
-                                    savePrice('poloniex', symbol, parseFloat(ticker.highestBid), parseFloat(ticker.lowestAsk));
-                                }
-                            });
-                        }
+                    if (d.channel === 'ticker' && d.data && d.data.length > 0) {
+                        d.data.forEach(ticker => {
+                            const symbol = (ticker.symbol || '').replace('_', '');
+                            if (symbol && ticker.bestBid && ticker.bestAsk) {
+                                savePrice('poloniex', symbol, parseFloat(ticker.bestBid), parseFloat(ticker.bestAsk));
+                            }
+                        });
                     }
                 } catch (err) {}
             };
@@ -914,22 +922,20 @@
             const ws = new WebSocket('wss://ws.bitstamp.net');
             wsConnections.bitstamp = ws;
             
-            const supportedPairs = COINS.filter(c => ['BTCUSDT', 'ETHUSDT', 'LTCUSDT', 'BCHUSDT', 'XRPUSDT'].includes(c));
-            
             ws.onopen = () => {
                 log('bitstamp', '✅ Connected');
                 connectionStatus.bitstamp = true;
                 updateStatusBar();
-                supportedPairs.forEach((coin, i) => {
+                COINS.slice(0, 15).forEach((coin, i) => {
                     setTimeout(() => {
                         if (ws.readyState === WebSocket.OPEN) {
-                            const pair = coin.toLowerCase().replace('usdt', 'usd');
+                            const base = coin.replace('USDT', '').toLowerCase();
                             ws.send(JSON.stringify({
                                 event: 'bts:subscribe',
-                                data: { channel: `order_book_${pair}` }
+                                data: { channel: `order_book_${base}usdt` }
                             }));
                         }
-                    }, i * 200);
+                    }, i * 100);
                 });
             };
             
@@ -937,7 +943,7 @@
                 try {
                     const d = JSON.parse(e.data);
                     if (d.event === 'data' && d.channel && d.data) {
-                        const pair = d.channel.replace('order_book_', '').replace('usd', 'USDT').toUpperCase();
+                        const pair = d.channel.replace('order_book_', '').toUpperCase();
                         const data = d.data;
                         if (data.bids && data.bids.length > 0 && data.asks && data.asks.length > 0) {
                             savePrice('bitstamp', pair, parseFloat(data.bids[0][0]), parseFloat(data.asks[0][0]));
@@ -957,27 +963,18 @@
         function initGemini() {
             if (wsConnections.gemini?.readyState === WebSocket.OPEN) return;
             
-            const ws = new WebSocket('wss://api.gemini.com/v1/marketdata');
+            const ws = new WebSocket('wss://api.gemini.com/v2/marketdata');
             wsConnections.gemini = ws;
-            
-            const supportedPairs = COINS.filter(c => ['BTCUSDT', 'ETHUSDT', 'LTCUSDT', 'BCHUSDT'].includes(c));
             
             ws.onopen = () => {
                 log('gemini', '✅ Connected');
                 connectionStatus.gemini = true;
                 updateStatusBar();
-                supportedPairs.forEach((coin, i) => {
-                    setTimeout(() => {
-                        if (ws.readyState === WebSocket.OPEN) {
-                            const base = coin.replace('USDT', '');
-                            const geminiPair = base.toLowerCase() + 'usd';
-                            ws.send(JSON.stringify({
-                                type: 'subscribe',
-                                subscriptions: [{ name: 'l2', symbols: [geminiPair] }]
-                            }));
-                        }
-                    }, i * 200);
-                });
+                const geminiSymbols = COINS.slice(0, 20).map(c => c.replace('USDT', 'USD'));
+                ws.send(JSON.stringify({
+                    type: 'subscribe',
+                    subscriptions: [{ name: 'l2', symbols: geminiSymbols }]
+                }));
             };
             
             ws.onmessage = (e) => {
@@ -985,17 +982,16 @@
                     const d = JSON.parse(e.data);
                     if (d.type === 'l2_updates' && d.symbol && d.changes) {
                         const symbol = d.symbol.toUpperCase().replace('USD', 'USDT');
-                        let bid = 0, ask = 0;
+                        let bid = 0, ask = Infinity;
                         d.changes.forEach(change => {
-                            if (change[0] === 'buy' && parseFloat(change[1]) > 0) {
-                                bid = Math.max(bid, parseFloat(change[1]));
-                            } else if (change[0] === 'sell' && parseFloat(change[1]) > 0) {
-                                if (ask === 0 || parseFloat(change[1]) < ask) {
-                                    ask = parseFloat(change[1]);
-                                }
+                            const price = parseFloat(change[1]);
+                            if (change[0] === 'buy' && price > bid) {
+                                bid = price;
+                            } else if (change[0] === 'sell' && price < ask && price > 0) {
+                                ask = price;
                             }
                         });
-                        if (bid > 0 && ask > 0) {
+                        if (bid > 0 && ask < Infinity) {
                             savePrice('gemini', symbol, bid, ask);
                         }
                     }
@@ -1173,8 +1169,8 @@
                             <span class="profit-badge ${isPositive ? 'positive' : 'negative'}">${profitText} USDT</span>
                         </div>
                         <div class="exchanges-grid">${exchangesHtml}</div>
-                        <div class="scenario">
-                            💡 ${result.scenario.buyExchange} → ${result.scenario.sellExchange}
+                        <div class="scenario ${isPositive ? '' : 'negative-scenario'}">
+                            ${isPositive ? '🚀' : '💡'} <strong>${result.scenario.buyExchange}</strong> → <strong>${result.scenario.sellExchange}</strong>
                         </div>
                         
                         <div class="recommendation">
