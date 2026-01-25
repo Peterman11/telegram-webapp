@@ -1276,7 +1276,12 @@
         // Функция для начальной загрузки данных через REST API для ВСЕХ бирж и ВСЕХ монет
         async function loadInitialData() {
             console.log('📥 Loading initial data via REST API for ALL exchanges and ALL coins...');
-            contentDiv.innerHTML = '<div class="loading">⏳ Загрузка начальных данных со всех бирж...<br>Это может занять несколько секунд...</div>';
+            console.log('📊 Всего монет для загрузки:', COINS.length);
+            if (contentDiv) {
+                contentDiv.innerHTML = '<div class="loading">⏳ Загрузка начальных данных со всех бирж...<br>Это может занять несколько секунд...</div>';
+            } else {
+                console.error('❌ contentDiv не найден при вызове loadInitialData!');
+            }
             
             let successCount = 0;
             let errorCount = 0;
@@ -1415,21 +1420,7 @@
                                 return null;
                             }),
                         // BingX - пропускаем из-за CORS блокировки
-                        Promise.resolve(null) // BingX блокирует CORS запросы из браузера
-                            .then(d => {
-                                if (d && d.code === 0 && d.data && d.data.bidPrice && d.data.askPrice) {
-                                    const bid = parseFloat(d.data.bidPrice);
-                                    const ask = parseFloat(d.data.askPrice);
-                                    if (!isNaN(bid) && !isNaN(ask) && bid > 0 && ask > 0) {
-                                        return { bid, ask };
-                                    }
-                                }
-                                return null;
-                            })
-                            .catch(err => {
-                                console.error(`BingX REST error for ${coin}:`, err);
-                                return null;
-                            }),
+                        Promise.resolve(null), // BingX блокирует CORS запросы из браузера
                         // Coinbase (использует формат BTC-USDT)
                         fetch(`https://api.exchange.coinbase.com/products/${coin.replace('USDT', '-USDT')}/ticker`)
                             .then(r => {
