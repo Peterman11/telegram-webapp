@@ -294,29 +294,133 @@
         }
 
         /**
-         * Расчет рекомендаций по суммам
+         * Оценка ликвидности монеты на основе цены
+         * Возвращает примерный объем в USDT, который можно купить без значительного проседания цены
          */
-        function calculateRecommendations(buyPrice, buyFee, sellPrice, sellFee) {
+        function estimateLiquidity(coin, price) {
+            // Эмпирические оценки ликвидности на основе цены монеты
+            // Для дорогих монет (BTC, ETH) - высокая ликвидность
+            // Для дешевых монет - ниже ликвидность
+            
+            const highLiquidityCoins = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'XRPUSDT', 'SOLUSDT'];
+            const mediumLiquidityCoins = ['ADAUSDT', 'DOTUSDT', 'AVAXUSDT', 'LINKUSDT', 'UNIUSDT', 'ATOMUSDT'];
+            
+            if (highLiquidityCoins.includes(coin)) {
+                // Для топ-монет можно купить до 10-50k USDT без сильного проседания
+                return price > 1000 ? 50000 : 25000;
+            } else if (mediumLiquidityCoins.includes(coin)) {
+                // Для средних монет - до 5-20k USDT
+                return price > 10 ? 20000 : 10000;
+            } else {
+                // Для остальных - до 1-5k USDT
+                return price > 1 ? 5000 : 2000;
+            }
+        }
+
+        /**
+         * Расчет средневзвешенной цены при покупке определенного объема
+         * Упрощенная модель: предполагаем, что ликвидность распределена равномерно
+         */
+        function calculateWeightedPrice(basePrice, amount, liquidity) {
+            // Если объем меньше 10% от ликвидности - цена почти не меняется
+            if (amount < liquidity * 0.1) {
+                return basePrice;
+            }
+            
+            // При больших объемах цена проседает
+            // Упрощенная модель: проседание пропорционально квадрату от объема
+            const utilization = Math.min(amount / liquidity, 1);
+            const slippage = utilization * utilization * 0.005; // Максимум 0.5% проседание
+            
+            return basePrice * (1 + slippage);
+        }
+
+        /**
+         * Расчет оптимальной суммы входа с учетом ликвидности
+         * Находит максимальную сумму, при которой цена не проседает больше чем на maxSlippage%
+         */
+        function calculateOptimalEntryAmount(coin, buyPrice, sellPrice, buyFee, sellFee, maxSlippage = 0.1) {
+            const liquidity = estimateLiquidity(coin, buyPrice);
+            const efficiency = calculateEfficiency(buyPrice, buyFee, sellPrice, sellFee);
+            
+            if (efficiency <= 0) return { optimalAmount: 0, reason: 'Арбитраж убыточен' };
+            
+            // Ищем максимальную сумму, при которой проседание цены не превышает maxSlippage%
+            let optimalAmount = 0;
+            let maxProfit = -Infinity;
+            
+            // Проверяем разные суммы
+            const testAmounts = [100, 250, 500, 1000, 2500, 5000, 10000];
+            
+            for (const amount of testAmounts) {
+                if (amount > liquidity * 2) break; // Не проверяем суммы больше 2x ликвидности
+                
+                // Рассчитываем реальную цену покупки с учетом проседания
+                const actualBuyPrice = calculateWeightedPrice(buyPrice, amount, liquidity);
+                const actualSellPrice = calculateWeightedPrice(sellPrice, amount, liquidity);
+                
+                // Проверяем проседание
+                const buySlippage = ((actualBuyPrice - buyPrice) / buyPrice) * 100;
+                const sellSlippage = ((sellPrice - actualSellPrice) / sellPrice) * 100;
+                const totalSlippage = buySlippage + sellSlippage;
+                
+                if (totalSlippage > maxSlippage) {
+                    break; // Проседание слишком большое
+                }
+                
+                // Рассчитываем прибыль с учетом реальных цен
+                const profit = calculateProfit(actualBuyPrice, buyFee, actualSellPrice, sellFee, amount);
+                
+                if (profit > maxProfit) {
+                    maxProfit = profit;
+                    optimalAmount = amount;
+                }
+            }
+            
+            return {
+                optimalAmount,
+                maxProfit,
+                liquidity,
+                reason: optimalAmount > 0 ? 'Оптимальная сумма найдена' : 'Недостаточная ликвидность'
+            };
+        }
+
+        /**
+         * Расчет рекомендаций по суммам с учетом ликвидности
+         */
+        function calculateRecommendations(coin, buyPrice, buyFee, sellPrice, sellFee) {
             const efficiency = calculateEfficiency(buyPrice, buyFee, sellPrice, sellFee);
             const isProfitable = efficiency > 0;
             
-            const recommendations = CONFIG.AMOUNTS.map(amount => ({
-                amount,
-                profit: calculateProfit(buyPrice, buyFee, sellPrice, sellFee, amount),
-                roi: efficiency // ROI одинаков для всех сумм
-            }));
+            // Рассчитываем оптимальную сумму входа с учетом ликвидности
+            const optimalEntry = calculateOptimalEntryAmount(coin, buyPrice, sellPrice, buyFee, sellFee);
             
-            // Находим оптимальную сумму
-            // Для арбитража без учета глубины стакана - чем больше сумма, тем больше абсолютная прибыль
-            // Но практически рекомендуем 500-1000 USDT как баланс между прибылью и риском
-            let optimalAmount = isProfitable ? 500 : 0;
-            if (efficiency > 0.5) optimalAmount = 1000; // При высокой эффективности можно больше
-            if (efficiency > 1) optimalAmount = 2500;
+            const recommendations = CONFIG.AMOUNTS.map(amount => {
+                // Для каждой суммы рассчитываем реальную цену с учетом проседания
+                const liquidity = estimateLiquidity(coin, buyPrice);
+                const actualBuyPrice = calculateWeightedPrice(buyPrice, amount, liquidity);
+                const actualSellPrice = calculateWeightedPrice(sellPrice, amount, liquidity);
+                
+                const profit = calculateProfit(actualBuyPrice, buyFee, actualSellPrice, sellFee, amount);
+                const buySlippage = ((actualBuyPrice - buyPrice) / buyPrice) * 100;
+                const sellSlippage = ((sellPrice - actualSellPrice) / sellPrice) * 100;
+                
+                return {
+                    amount,
+                    profit,
+                    roi: efficiency,
+                    slippage: buySlippage + sellSlippage,
+                    actualBuyPrice,
+                    actualSellPrice
+                };
+            });
             
             return {
                 efficiency,
                 isProfitable,
-                optimalAmount,
+                optimalAmount: optimalEntry.optimalAmount || (isProfitable ? 500 : 0),
+                maxProfit: optimalEntry.maxProfit,
+                liquidity: optimalEntry.liquidity,
                 recommendations
             };
         }
@@ -838,8 +942,9 @@
                 }
                 
                 if (best.scenario) {
-                    // Рассчитываем рекомендации для лучшего сценария
+                    // Рассчитываем рекомендации для лучшего сценария с учетом ликвидности
                     const recs = calculateRecommendations(
+                        coin,
                         best.buyEx.data.ask, best.buyEx.fee,
                         best.sellEx.data.bid, best.sellEx.fee
                     );
@@ -896,7 +1001,7 @@
                     `;
                 }
                 
-                // Формируем рекомендации по суммам
+                // Формируем рекомендации по суммам с учетом проседания цены
                 let recsHtml = '';
                 const showAmounts = [100, 500, 1000, 2500];
                 for (const amount of showAmounts) {
@@ -905,10 +1010,11 @@
                         const isOptimal = amount === recs.optimalAmount;
                         const profitClass = rec.profit >= 0 ? 'positive' : 'negative';
                         const profitSign = rec.profit >= 0 ? '+' : '';
+                        const slippageText = rec.slippage > 0.01 ? ` (проседание: ${rec.slippage.toFixed(3)}%)` : '';
                         recsHtml += `
                             <div class="rec-item">
                                 <span class="rec-amount">${amount} USDT${isOptimal ? '<span class="optimal-badge">⭐ Оптимально</span>' : ''}</span>
-                                <span class="rec-profit ${profitClass}">${profitSign}${formatPrice(rec.profit)} USDT</span>
+                                <span class="rec-profit ${profitClass}">${profitSign}${formatPrice(rec.profit)} USDT${slippageText}</span>
                             </div>
                         `;
                     }
@@ -931,19 +1037,29 @@
                         
                         <div class="recommendation">
                             <div class="recommendation-title">
-                                📊 Рекомендации по сумме
+                                📊 Оптимальная сумма входа (с учетом ликвидности)
                             </div>
                             <div class="efficiency">
                                 <div class="efficiency-value ${effClass}">${effSign}${recs.efficiency.toFixed(3)}%</div>
-                                <div class="efficiency-label">Эффективность (ROI на любую сумму)</div>
+                                <div class="efficiency-label">Эффективность (ROI)</div>
                             </div>
+                            ${recs.isProfitable && recs.optimalAmount > 0 ? `
+                                <div style="margin-top: 10px; padding: 10px; background: rgba(76, 175, 80, 0.1); border-radius: 8px;">
+                                    <div style="font-size: 14px; font-weight: 600; color: var(--positive-color); margin-bottom: 6px;">
+                                        ⭐ Рекомендуемая сумма: <strong>${recs.optimalAmount} USDT</strong>
+                                    </div>
+                                    <div style="font-size: 12px; color: var(--hint-color);">
+                                        💰 Прибыль: ~${formatPrice(recs.maxProfit || 0)} USDT<br>
+                                        📊 Оценка ликвидности: до ${Math.round(recs.liquidity / 1000)}k USDT без сильного проседания
+                                    </div>
+                                </div>
+                            ` : ''}
                             <div class="recommendation-grid" style="margin-top: 10px;">
                                 ${recsHtml}
                             </div>
                             ${recs.isProfitable ? `
-                                <div style="margin-top: 10px; font-size: 12px; color: var(--positive-color);">
-                                    ✅ Рекомендуемая сумма: <strong>${recs.optimalAmount} USDT</strong>
-                                    (прибыль ~${formatPrice(recs.recommendations.find(r => r.amount === recs.optimalAmount)?.profit || 0)} USDT)
+                                <div style="margin-top: 10px; font-size: 11px; color: var(--hint-color);">
+                                    💡 Суммы рассчитаны с учетом проседания цены при покупке/продаже
                                 </div>
                             ` : `
                                 <div style="margin-top: 10px; font-size: 12px; color: var(--negative-color);">
