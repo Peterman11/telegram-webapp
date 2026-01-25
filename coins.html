@@ -96,17 +96,14 @@
         const coinGrid = document.getElementById('coinGrid');
         const submitButton = document.getElementById('submitButton');
         
-        // Создаем кнопки для каждой монеты
         coins.forEach(coin => {
             const button = document.createElement('button');
             button.className = 'coin-button';
             button.textContent = coin;
             button.onclick = () => {
-                // Убираем выделение с предыдущей кнопки
                 document.querySelectorAll('.coin-button').forEach(btn => {
                     btn.classList.remove('selected');
                 });
-                // Выделяем текущую кнопку
                 button.classList.add('selected');
                 selectedCoin = coin;
                 submitButton.disabled = false;
@@ -114,7 +111,6 @@
             coinGrid.appendChild(button);
         });
         
-        // Обработка отправки
         submitButton.onclick = () => {
             if (selectedCoin) {
                 const data = {

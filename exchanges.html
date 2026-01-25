@@ -124,7 +124,6 @@
         const exchangeList = document.getElementById('exchangeList');
         const submitButton = document.getElementById('submitButton');
         
-        // Создаем список бирж
         exchanges.forEach(exchange => {
             const item = document.createElement('div');
             item.className = 'exchange-item';
@@ -145,7 +144,6 @@
             exchangeList.appendChild(item);
         });
         
-        // Обработка отправки
         submitButton.onclick = () => {
             if (selectedExchanges.size > 0) {
                 const data = {
