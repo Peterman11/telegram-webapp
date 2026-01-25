@@ -81,7 +81,166 @@
             font-size: 13px;
             color: var(--hint-color);
         }
+        .summary {
+            text-align: center;
+            padding: 10px;
+            margin-bottom: 12px;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--hint-color);
+        }
+        .recommendation {
+            margin-top: 12px;
+            padding: 12px;
+            background: rgba(128, 128, 128, 0.1);
+            border-radius: 8px;
+        }
+        .recommendation-title {
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 10px;
+        }
+        .efficiency {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        .efficiency-value {
+            font-size: 16px;
+            font-weight: 700;
+        }
+        .efficiency-value.positive { color: var(--positive-color); }
+        .efficiency-value.negative { color: var(--negative-color); }
+        .efficiency-label {
+            font-size: 12px;
+            color: var(--hint-color);
+        }
+        .recommendation-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .rec-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 8px;
+            background: rgba(128, 128, 128, 0.1);
+            border-radius: 6px;
+            font-size: 12px;
+        }
+        .rec-amount { font-weight: 500; }
+        .rec-profit.positive { color: var(--positive-color); }
+        .rec-profit.negative { color: var(--negative-color); }
+        .optimal-badge {
+            margin-left: 6px;
+            font-size: 10px;
+            color: var(--positive-color);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📈 Арбитраж криптовалют</h1>
+        <div id="statusBar" class="status-bar disconnected">⏳ Подключение...</div>
+        <button id="refreshBtn" style="width:100%;padding:12px;margin-bottom:12px;border:none;border-radius:10px;background:var(--button-color);color:var(--button-text-color);font-size:14px;font-weight:500;cursor:pointer;">🔄 Переподключить</button>
+        <div id="content" class="arbitrage-list">
+            <div class="loading">⏳ Загрузка данных...</div>
+        </div>
+    </div>
+
+    <script>
+        'use strict';
         
+        const CONFIG = {
+            TRADE_AMOUNT: 100,
+            UPDATE_THROTTLE: 500,
+            RECONNECT_DELAY: 5000,
+            TOP_RESULTS: 10,
+            AMOUNTS: [50, 100, 250, 500, 1000, 2500, 5000],
+        };
+
+        const COINS = [
+            'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'XRPUSDT', 'SOLUSDT', 
+            'TRXUSDT', 'DOGEUSDT', 'ADAUSDT', 'LINKUSDT', 'LTCUSDT', 
+            'AVAXUSDT', 'XLMUSDT', 'XMRUSDT', 'BCHUSDT', 'DOTUSDT',
+            'UNIUSDT', 'SHIBUSDT', 'ATOMUSDT', 'NEARUSDT', 'AAVEUSDT',
+            'APTUSDT', 'ARBUSDT', 'OPUSDT', 'FILUSDT', 'ICPUSDT',
+            'ETCUSDT', 'ALGOUSDT', 'VETUSDT', 'MATICUSDT', 'INJUSDT',
+            'FTMUSDT', 'AXSUSDT', 'SUIUSDT', 'SEIUSDT', 'TONUSDT',
+            'PEPEUSDT', 'MKRUSDT', 'STXUSDT', 'CRVUSDT', 'LDOUSDT'
+        ];
+
+        const FEES = {
+            binance: 0.001,
+            bybit: 0.001,
+            okx: 0.001,
+            kucoin: 0.001,
+            bitget: 0.001,
+            huobi: 0.002,
+            coinbase: 0.006,
+            bitfinex: 0.002,
+            bingx: 0.001,
+        };
+
+        const EXCHANGE_NAMES = {
+            binance: 'Binance',
+            bybit: 'Bybit',
+            okx: 'OKX',
+            kucoin: 'KuCoin',
+            bitget: 'Bitget',
+            huobi: 'Huobi',
+            coinbase: 'Coinbase',
+            bitfinex: 'Bitfinex',
+            bingx: 'BingX',
+        };
+
+        const prices = {};
+        const wsConnections = {};
+        const connectionStatus = {};
+        const bitfinexChannels = new Map();
+        
+        Object.keys(FEES).forEach(ex => {
+            prices[ex] = {};
+            connectionStatus[ex] = false;
+        });
+
+        let lastUpdate = 0;
+        let updateTimer = null;
+
+        const contentDiv = document.getElementById('content');
+        const statusBar = document.getElementById('statusBar');
+        const refreshBtn = document.getElementById('refreshBtn');
+
+        const tg = window.Telegram?.WebApp;
+        if (tg) { tg.ready(); tg.expand(); }
+
+        function log(exchange, msg, data = '') {
+            console.log(`[${exchange.toUpperCase()}] ${msg}`, data);
+        }
+
+        function formatPrice(num) {
+            if (!Number.isFinite(num)) return 'N/A';
+            return num.toFixed(2);
+        }
+
+        function savePrice(exchange, symbol, bid, ask) {
+            if (bid > 0 && ask > 0 && COINS.includes(symbol)) {
+                prices[exchange][symbol] = { bid, ask, timestamp: Date.now() };
+                scheduleUpdate();
+            }
+        }
+
+        function calculateProfit(buyPrice, buyFee, sellPrice, sellFee, amount) {
+            if (!buyPrice || !sellPrice || buyPrice <= 0 || sellPrice <= 0) return -Infinity;
+            const afterBuyFee = amount * (1 - buyFee);
+            const crypto = afterBuyFee / buyPrice;
+            const gross = crypto * sellPrice;
+            const net = gross * (1 - sellFee);
+            return net - amount;
+        }
+
         function calculateEfficiency(buyPrice, buyFee, sellPrice, sellFee) {
             const ratio = (sellPrice / buyPrice) * (1 - buyFee) * (1 - sellFee);
             return (ratio - 1) * 100;
