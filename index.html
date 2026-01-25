@@ -1045,14 +1045,16 @@
             const exchangeIds = Object.keys(FEES);
             
             for (const coin of COINS) {
-                const exchangeData = exchangeIds
+                const allExchangeData = exchangeIds
                     .map(id => ({
                         id,
                         name: EXCHANGE_NAMES[id],
                         fee: FEES[id],
-                        data: prices[id][coin]
-                    }))
-                    .filter(e => e.data?.bid > 0 && e.data?.ask > 0);
+                        data: prices[id][coin],
+                        hasData: prices[id][coin]?.bid > 0 && prices[id][coin]?.ask > 0
+                    }));
+                
+                const exchangeData = allExchangeData.filter(e => e.hasData);
                 
                 if (exchangeData.length < 2) continue;
                 
@@ -1093,7 +1095,7 @@
                         coin,
                         profit: best.profit,
                         scenario: best.scenario,
-                        exchanges: exchangeData,
+                        exchanges: allExchangeData,
                         recommendations: recs,
                         buyPrice: best.buyEx.data.ask,
                         sellPrice: best.sellEx.data.bid,
@@ -1131,14 +1133,26 @@
                 
                 let exchangesHtml = '';
                 for (const ex of result.exchanges) {
-                    exchangesHtml += `
-                        <div class="exchange-row">
-                            <span class="exchange-name">${ex.name}:</span>
-                            <span class="exchange-prices">
-                                Покупка ${formatPrice(ex.data.ask)} | Продажа ${formatPrice(ex.data.bid)}
-                            </span>
-                        </div>
-                    `;
+                    if (ex.hasData) {
+                        exchangesHtml += `
+                            <div class="exchange-row">
+                                <span class="exchange-name">${ex.name}:</span>
+                                <span class="exchange-prices">
+                                    Покупка ${formatPrice(ex.data.ask)} | Продажа ${formatPrice(ex.data.bid)}
+                                </span>
+                            </div>
+                        `;
+                    } else {
+                        const isConnected = connectionStatus[ex.id];
+                        exchangesHtml += `
+                            <div class="exchange-row" style="opacity: 0.5;">
+                                <span class="exchange-name">${ex.name}:</span>
+                                <span class="exchange-prices" style="color: var(--hint-color); font-style: italic;">
+                                    ${isConnected ? '⏳ Ожидание данных...' : '❌ Нет подключения'}
+                                </span>
+                            </div>
+                        `;
+                    }
                 }
                 
                 let recsHtml = '';
