@@ -1605,26 +1605,70 @@
             updateArbitrageData();
         }
         
-        // Инициализируем WebSocket соединения при загрузке
-        console.log('🚀 Инициализация приложения...');
-        console.log('📋 Поддерживаемые монеты:', COINS);
-        updateStatusBar();
+        // Инициализируем приложение после загрузки DOM
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initApp);
+        } else {
+            initApp();
+        }
         
-        // Загружаем начальные данные через REST API (чтобы сразу показать список)
-        console.log('📥 Начинаем загрузку начальных данных через REST API...');
-        loadInitialData().catch(err => {
-            console.error('❌ Критическая ошибка при загрузке начальных данных:', err);
-            contentDiv.innerHTML = '<div class="error">Ошибка загрузки данных. Проверьте консоль для деталей.</div>';
-        });
-        
-        // Подключаемся через WebSocket для обновлений в реальном времени
-        setTimeout(() => {
-            console.log('🔌 Инициализация WebSocket подключений...');
-            initBinanceWebSocket();
-            initBybitWebSocket();
-            initMexcWebSocket();
-            initAllOtherWebSockets();
-        }, 500);
+        function initApp() {
+            console.log('🚀 Инициализация приложения...');
+            console.log('📋 Поддерживаемые монеты:', COINS.length, 'монет');
+            updateStatusBar();
+            
+            // Загружаем начальные данные через REST API (чтобы сразу показать список)
+            console.log('📥 Начинаем загрузку начальных данных через REST API...');
+            loadInitialData().catch(err => {
+                console.error('❌ Критическая ошибка при загрузке начальных данных:', err);
+                if (contentDiv) {
+                    contentDiv.innerHTML = '<div class="error">Ошибка загрузки данных. Проверьте консоль для деталей.</div>';
+                }
+            });
+            
+            // Подключаемся через WebSocket для обновлений в реальном времени
+            setTimeout(() => {
+                console.log('🔌 Инициализация WebSocket подключений...');
+                console.log('🔍 Проверка доступности функций WebSocket:');
+                console.log('  - initBinanceWebSocket:', typeof initBinanceWebSocket);
+                console.log('  - initBybitWebSocket:', typeof initBybitWebSocket);
+                console.log('  - initMexcWebSocket:', typeof initMexcWebSocket);
+                console.log('  - initAllOtherWebSockets:', typeof initAllOtherWebSockets);
+                
+                try {
+                    if (typeof initBinanceWebSocket === 'function') {
+                        console.log('✅ Вызываю initBinanceWebSocket...');
+                        initBinanceWebSocket();
+                    } else {
+                        console.error('❌ initBinanceWebSocket не определена!');
+                    }
+                    
+                    if (typeof initBybitWebSocket === 'function') {
+                        console.log('✅ Вызываю initBybitWebSocket...');
+                        initBybitWebSocket();
+                    } else {
+                        console.error('❌ initBybitWebSocket не определена!');
+                    }
+                    
+                    if (typeof initMexcWebSocket === 'function') {
+                        console.log('✅ Вызываю initMexcWebSocket...');
+                        initMexcWebSocket();
+                    } else {
+                        console.error('❌ initMexcWebSocket не определена!');
+                    }
+                    
+                    if (typeof initAllOtherWebSockets === 'function') {
+                        console.log('✅ Вызываю initAllOtherWebSockets...');
+                        initAllOtherWebSockets();
+                    } else {
+                        console.error('❌ initAllOtherWebSockets не определена!');
+                    }
+                } catch (error) {
+                    console.error('❌ Ошибка при инициализации WebSocket:', error);
+                    console.error('Stack trace:', error.stack);
+                }
+            }, 500);
+        }
     </script>
 </body>
 </html>
