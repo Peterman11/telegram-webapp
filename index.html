@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Арбитраж криптовалют</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <!-- Pako для распаковки gzip (Huobi) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
     <style>
         :root {
@@ -47,7 +46,7 @@
             font-size: 14px;
             line-height: 1.6;
         }
-        .arbitrage-list { display: flex; flex-direction: column; gap: 10px; }
+        .arbitrage-list { display: flex; flex-direction: column; gap: 12px; }
         .arbitrage-card {
             background: var(--secondary-bg);
             border-radius: 12px;
@@ -83,6 +82,63 @@
             font-size: 13px;
             color: var(--hint-color);
         }
+        
+        /* Рекомендации по сумме */
+        .recommendation {
+            margin-top: 12px;
+            padding: 12px;
+            background: rgba(51, 144, 236, 0.1);
+            border-radius: 8px;
+            font-size: 13px;
+        }
+        .recommendation-title {
+            font-weight: 600;
+            color: var(--button-color);
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .recommendation-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+        }
+        .rec-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 6px 8px;
+            background: var(--bg-color);
+            border-radius: 6px;
+        }
+        .rec-amount { color: var(--hint-color); }
+        .rec-profit { font-weight: 600; }
+        .rec-profit.positive { color: var(--positive-color); }
+        .rec-profit.negative { color: var(--negative-color); }
+        .optimal-badge {
+            background: var(--positive-color);
+            color: white;
+            font-size: 11px;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-left: 6px;
+        }
+        .efficiency {
+            margin-top: 8px;
+            padding: 8px;
+            background: var(--bg-color);
+            border-radius: 6px;
+            text-align: center;
+        }
+        .efficiency-value {
+            font-size: 18px;
+            font-weight: 700;
+        }
+        .efficiency-label {
+            font-size: 11px;
+            color: var(--hint-color);
+        }
+        
         .refresh-btn {
             width: 100%;
             background: var(--button-color);
@@ -119,9 +175,10 @@
             UPDATE_THROTTLE: 500,
             RECONNECT_DELAY: 5000,
             TOP_RESULTS: 10,
+            // Суммы для расчета рекомендаций
+            AMOUNTS: [50, 100, 250, 500, 1000, 2500, 5000],
         };
 
-        // Топ монеты - только самые ликвидные для надежности
         const COINS = [
             'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'XRPUSDT', 'SOLUSDT', 
             'TRXUSDT', 'DOGEUSDT', 'ADAUSDT', 'LINKUSDT', 'LTCUSDT', 
@@ -133,7 +190,6 @@
             'PEPEUSDT', 'MKRUSDT', 'STXUSDT', 'CRVUSDT', 'LDOUSDT'
         ];
 
-        // Комиссии бирж
         const FEES = {
             binance: 0.001,
             bybit: 0.001,
@@ -175,12 +231,10 @@
         let lastUpdate = 0;
         let updateTimer = null;
 
-        // DOM
         const contentDiv = document.getElementById('content');
         const statusBar = document.getElementById('statusBar');
         const refreshBtn = document.getElementById('refreshBtn');
 
-        // Telegram
         const tg = window.Telegram?.WebApp;
         if (tg) { tg.ready(); tg.expand(); }
 
@@ -215,6 +269,56 @@
             const gross = crypto * sellPrice;
             const net = gross * (1 - sellFee);
             return net - amount;
+        }
+
+        /**
+         * Расчет эффективности арбитража (в процентах)
+         * Показывает, какой процент от суммы составляет прибыль
+         */
+        function calculateEfficiency(buyPrice, buyFee, sellPrice, sellFee) {
+            // Эффективность = (sellPrice/buyPrice) * (1-buyFee) * (1-sellFee) - 1
+            // Не зависит от суммы!
+            const ratio = (sellPrice / buyPrice) * (1 - buyFee) * (1 - sellFee);
+            return (ratio - 1) * 100;
+        }
+
+        /**
+         * Расчет минимальной суммы для безубыточности
+         * (с учетом минимальных комиссий бирж, если есть)
+         */
+        function calculateMinAmount(buyPrice, buyFee, sellPrice, sellFee, minFee = 0) {
+            const efficiency = calculateEfficiency(buyPrice, buyFee, sellPrice, sellFee);
+            if (efficiency <= 0) return Infinity; // Всегда убыточно
+            // minAmount * efficiency/100 >= minFee
+            return minFee > 0 ? (minFee * 100 / efficiency) : 0;
+        }
+
+        /**
+         * Расчет рекомендаций по суммам
+         */
+        function calculateRecommendations(buyPrice, buyFee, sellPrice, sellFee) {
+            const efficiency = calculateEfficiency(buyPrice, buyFee, sellPrice, sellFee);
+            const isProfitable = efficiency > 0;
+            
+            const recommendations = CONFIG.AMOUNTS.map(amount => ({
+                amount,
+                profit: calculateProfit(buyPrice, buyFee, sellPrice, sellFee, amount),
+                roi: efficiency // ROI одинаков для всех сумм
+            }));
+            
+            // Находим оптимальную сумму
+            // Для арбитража без учета глубины стакана - чем больше сумма, тем больше абсолютная прибыль
+            // Но практически рекомендуем 500-1000 USDT как баланс между прибылью и риском
+            let optimalAmount = isProfitable ? 500 : 0;
+            if (efficiency > 0.5) optimalAmount = 1000; // При высокой эффективности можно больше
+            if (efficiency > 1) optimalAmount = 2500;
+            
+            return {
+                efficiency,
+                isProfitable,
+                optimalAmount,
+                recommendations
+            };
         }
 
         // ═══════════════════════════════════════════════════════════════════
@@ -326,14 +430,13 @@
         }
 
         // ═══════════════════════════════════════════════════════════════════
-        // KUCOIN WebSocket (через REST для получения токена)
+        // KUCOIN WebSocket
         // ═══════════════════════════════════════════════════════════════════
         
         async function initKucoin() {
             if (wsConnections.kucoin?.readyState === WebSocket.OPEN) return;
             
             try {
-                // Получаем токен для публичного WebSocket
                 const resp = await fetch('https://api.kucoin.com/api/v1/bullet-public', { method: 'POST' });
                 const json = await resp.json();
                 
@@ -355,7 +458,6 @@
                     connectionStatus.kucoin = true;
                     updateStatusBar();
                     
-                    // Подписываемся на тикеры
                     COINS.forEach((coin, i) => {
                         setTimeout(() => {
                             if (ws.readyState === WebSocket.OPEN) {
@@ -441,7 +543,7 @@
         }
 
         // ═══════════════════════════════════════════════════════════════════
-        // HUOBI WebSocket (с распаковкой gzip)
+        // HUOBI WebSocket
         // ═══════════════════════════════════════════════════════════════════
         
         function initHuobi() {
@@ -474,22 +576,18 @@
                         data = JSON.parse(e.data);
                     }
                     
-                    // Отвечаем на ping
                     if (data.ping) {
                         ws.send(JSON.stringify({ pong: data.ping }));
                         return;
                     }
                     
-                    // Обрабатываем BBO данные
                     if (data.tick && data.ch) {
                         const symbol = data.ch.replace('market.', '').replace('.bbo', '').toUpperCase();
                         if (data.tick.bid && data.tick.ask) {
                             savePrice('huobi', symbol, parseFloat(data.tick.bid), parseFloat(data.tick.ask));
                         }
                     }
-                } catch (err) {
-                    // log('huobi', 'Parse error:', err);
-                }
+                } catch (err) {}
             };
             
             ws.onerror = ws.onclose = () => {
@@ -569,13 +667,11 @@
                 try {
                     const d = JSON.parse(e.data);
                     
-                    // Сохраняем маппинг channel -> symbol
                     if (d.event === 'subscribed' && d.chanId && d.symbol) {
                         bitfinexChannels.set(d.chanId, d.symbol.replace('t', ''));
                         return;
                     }
                     
-                    // Обрабатываем тикер [chanId, [bid, bid_size, ask, ask_size, ...]]
                     if (Array.isArray(d) && d.length >= 2 && Array.isArray(d[1]) && d[1].length >= 4) {
                         const symbol = bitfinexChannels.get(d[0]);
                         if (symbol) {
@@ -609,7 +705,6 @@
                 COINS.forEach((coin, i) => {
                     setTimeout(() => {
                         if (ws.readyState === WebSocket.OPEN) {
-                            // BingX использует формат BTC-USDT
                             const symbol = coin.replace('USDT', '-USDT');
                             ws.send(JSON.stringify({
                                 id: Date.now().toString(),
@@ -625,7 +720,6 @@
                 try {
                     let data;
                     if (e.data instanceof Blob) {
-                        // BingX может отправлять gzip
                         const arrayBuffer = await e.data.arrayBuffer();
                         const uint8Array = new Uint8Array(arrayBuffer);
                         try {
@@ -639,13 +733,11 @@
                         data = JSON.parse(e.data);
                     }
                     
-                    // Ping/pong
                     if (data.ping) {
                         ws.send(JSON.stringify({ pong: data.ping }));
                         return;
                     }
                     
-                    // Данные тикера
                     if (data.data) {
                         const d = data.data;
                         const symbol = (d.s || d.symbol || '').replace('-', '');
@@ -719,7 +811,7 @@
                 
                 if (exchangeData.length < 2) continue;
                 
-                let best = { profit: -Infinity, scenario: null };
+                let best = { profit: -Infinity, scenario: null, buyEx: null, sellEx: null };
                 
                 for (const buyEx of exchangeData) {
                     for (const sellEx of exchangeData) {
@@ -737,18 +829,29 @@
                                 scenario: {
                                     buyExchange: buyEx.name,
                                     sellExchange: sellEx.name,
-                                }
+                                },
+                                buyEx,
+                                sellEx
                             };
                         }
                     }
                 }
                 
                 if (best.scenario) {
+                    // Рассчитываем рекомендации для лучшего сценария
+                    const recs = calculateRecommendations(
+                        best.buyEx.data.ask, best.buyEx.fee,
+                        best.sellEx.data.bid, best.sellEx.fee
+                    );
+                    
                     results.push({
                         coin,
                         profit: best.profit,
                         scenario: best.scenario,
                         exchanges: exchangeData,
+                        recommendations: recs,
+                        buyPrice: best.buyEx.data.ask,
+                        sellPrice: best.sellEx.data.bid,
                     });
                 }
             }
@@ -779,6 +882,7 @@
             for (const result of topResults) {
                 const isPositive = result.profit >= 0;
                 const profitText = isPositive ? `+${formatPrice(result.profit)}` : formatPrice(result.profit);
+                const recs = result.recommendations;
                 
                 let exchangesHtml = '';
                 for (const ex of result.exchanges) {
@@ -792,6 +896,28 @@
                     `;
                 }
                 
+                // Формируем рекомендации по суммам
+                let recsHtml = '';
+                const showAmounts = [100, 500, 1000, 2500];
+                for (const amount of showAmounts) {
+                    const rec = recs.recommendations.find(r => r.amount === amount);
+                    if (rec) {
+                        const isOptimal = amount === recs.optimalAmount;
+                        const profitClass = rec.profit >= 0 ? 'positive' : 'negative';
+                        const profitSign = rec.profit >= 0 ? '+' : '';
+                        recsHtml += `
+                            <div class="rec-item">
+                                <span class="rec-amount">${amount} USDT${isOptimal ? '<span class="optimal-badge">⭐ Оптимально</span>' : ''}</span>
+                                <span class="rec-profit ${profitClass}">${profitSign}${formatPrice(rec.profit)} USDT</span>
+                            </div>
+                        `;
+                    }
+                }
+                
+                // Эффективность и рекомендация
+                const effClass = recs.efficiency >= 0 ? 'positive' : 'negative';
+                const effSign = recs.efficiency >= 0 ? '+' : '';
+                
                 html += `
                     <div class="arbitrage-card ${isPositive ? 'positive' : 'negative'}">
                         <div class="card-header">
@@ -800,8 +926,30 @@
                         </div>
                         <div class="exchanges-grid">${exchangesHtml}</div>
                         <div class="scenario">
-                            💡 ${result.scenario.buyExchange} → ${result.scenario.sellExchange} 
-                            (${formatPrice(result.profit)} USDT)
+                            💡 ${result.scenario.buyExchange} → ${result.scenario.sellExchange}
+                        </div>
+                        
+                        <div class="recommendation">
+                            <div class="recommendation-title">
+                                📊 Рекомендации по сумме
+                            </div>
+                            <div class="efficiency">
+                                <div class="efficiency-value ${effClass}">${effSign}${recs.efficiency.toFixed(3)}%</div>
+                                <div class="efficiency-label">Эффективность (ROI на любую сумму)</div>
+                            </div>
+                            <div class="recommendation-grid" style="margin-top: 10px;">
+                                ${recsHtml}
+                            </div>
+                            ${recs.isProfitable ? `
+                                <div style="margin-top: 10px; font-size: 12px; color: var(--positive-color);">
+                                    ✅ Рекомендуемая сумма: <strong>${recs.optimalAmount} USDT</strong>
+                                    (прибыль ~${formatPrice(recs.recommendations.find(r => r.amount === recs.optimalAmount)?.profit || 0)} USDT)
+                                </div>
+                            ` : `
+                                <div style="margin-top: 10px; font-size: 12px; color: var(--negative-color);">
+                                    ⚠️ Арбитраж убыточный при любой сумме
+                                </div>
+                            `}
                         </div>
                     </div>
                 `;
@@ -852,7 +1000,6 @@
             setTimeout(initAll, 1000);
         };
 
-        // Запуск
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', initAll);
         } else {
