@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Арбитраж криптовалют</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js"></script>
     <style>
         :root {
             --bg-color: var(--tg-theme-bg-color, #ffffff);
@@ -24,6 +23,7 @@
             color: var(--text-color);
             padding: 16px;
             min-height: 100vh;
+            margin: 0;
         }
         .container { max-width: 600px; margin: 0 auto; }
         h1 { font-size: 22px; margin-bottom: 16px; text-align: center; }
@@ -97,62 +97,25 @@
             font-weight: 500;
             color: var(--hint-color);
         }
-        .recommendation {
-            margin-top: 12px;
+        .refresh-btn {
+            width: 100%;
             padding: 12px;
-            background: rgba(128, 128, 128, 0.1);
-            border-radius: 8px;
-        }
-        .recommendation-title {
-            font-size: 13px;
-            font-weight: 600;
-            margin-bottom: 10px;
-        }
-        .efficiency {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 8px;
-        }
-        .efficiency-value {
-            font-size: 16px;
-            font-weight: 700;
-        }
-        .efficiency-value.positive { color: var(--positive-color); }
-        .efficiency-value.negative { color: var(--negative-color); }
-        .efficiency-label {
-            font-size: 12px;
-            color: var(--hint-color);
-        }
-        .recommendation-grid {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-        }
-        .rec-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 6px 8px;
-            background: rgba(128, 128, 128, 0.1);
-            border-radius: 6px;
-            font-size: 12px;
-        }
-        .rec-amount { font-weight: 500; }
-        .rec-profit.positive { color: var(--positive-color); }
-        .rec-profit.negative { color: var(--negative-color); }
-        .optimal-badge {
-            margin-left: 6px;
-            font-size: 10px;
-            color: var(--positive-color);
+            margin-bottom: 12px;
+            border: none;
+            border-radius: 10px;
+            background: var(--button-color);
+            color: var(--button-text-color);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
         }
     </style>
 </head>
 <body>
     <div class="container">
         <h1>📈 Арбитраж криптовалют</h1>
-        <div id="statusBar" class="status-bar disconnected">⏳ Подключение...</div>
-        <button id="refreshBtn" style="width:100%;padding:12px;margin-bottom:12px;border:none;border-radius:10px;background:var(--button-color);color:var(--button-text-color);font-size:14px;font-weight:500;cursor:pointer;">🔄 Переподключить</button>
+        <div id="statusBar" class="status-bar disconnected">⏳ Подключение к Python сервису...</div>
+        <button id="refreshBtn" class="refresh-btn">🔄 Обновить данные</button>
         <div id="content" class="arbitrage-list">
             <div class="loading">⏳ Загрузка данных...</div>
         </div>
@@ -161,25 +124,9 @@
     <script>
         'use strict';
         
-        const CONFIG = {
-            TRADE_AMOUNT: 100,
-            UPDATE_THROTTLE: 500,
-            RECONNECT_DELAY: 5000,
-            TOP_RESULTS: 10,
-            AMOUNTS: [50, 100, 250, 500, 1000, 2500, 5000],
-        };
-
-        const COINS = [
-            'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'XRPUSDT', 'SOLUSDT', 
-            'TRXUSDT', 'DOGEUSDT', 'ADAUSDT', 'LINKUSDT', 'LTCUSDT', 
-            'AVAXUSDT', 'XLMUSDT', 'XMRUSDT', 'BCHUSDT', 'DOTUSDT',
-            'UNIUSDT', 'SHIBUSDT', 'ATOMUSDT', 'NEARUSDT', 'AAVEUSDT',
-            'APTUSDT', 'ARBUSDT', 'OPUSDT', 'FILUSDT', 'ICPUSDT',
-            'ETCUSDT', 'ALGOUSDT', 'VETUSDT', 'MATICUSDT', 'INJUSDT',
-            'FTMUSDT', 'AXSUSDT', 'SUIUSDT', 'SEIUSDT', 'TONUSDT',
-            'PEPEUSDT', 'MKRUSDT', 'STXUSDT', 'CRVUSDT', 'LDOUSDT'
-        ];
-
+        const API_URL = 'http://127.0.0.1:5001';
+        const UPDATE_INTERVAL = 3000;
+        
         const FEES = {
             binance: 0.001,
             bybit: 0.001,
@@ -214,40 +161,19 @@
             gemini: 'Gemini',
         };
 
-        const prices = {};
-        const wsConnections = {};
-        const connectionStatus = {};
-        const bitfinexChannels = new Map();
-        
-        Object.keys(FEES).forEach(ex => {
-            prices[ex] = {};
-            connectionStatus[ex] = false;
-        });
-
-        let lastUpdate = 0;
-        let updateTimer = null;
-
         const contentDiv = document.getElementById('content');
         const statusBar = document.getElementById('statusBar');
         const refreshBtn = document.getElementById('refreshBtn');
+        
+        let updateTimer = null;
+        let isConnected = false;
 
         const tg = window.Telegram?.WebApp;
         if (tg) { tg.ready(); tg.expand(); }
 
-        function log(exchange, msg, data = '') {
-            console.log(`[${exchange.toUpperCase()}] ${msg}`, data);
-        }
-
         function formatPrice(num) {
             if (!Number.isFinite(num)) return 'N/A';
             return num.toFixed(2);
-        }
-
-        function savePrice(exchange, symbol, bid, ask) {
-            if (bid > 0 && ask > 0 && COINS.includes(symbol)) {
-                prices[exchange][symbol] = { bid, ask, timestamp: Date.now() };
-                scheduleUpdate();
-            }
         }
 
         function calculateProfit(buyPrice, buyFee, sellPrice, sellFee, amount) {
@@ -259,804 +185,69 @@
             return net - amount;
         }
 
-        function calculateEfficiency(buyPrice, buyFee, sellPrice, sellFee) {
-            const ratio = (sellPrice / buyPrice) * (1 - buyFee) * (1 - sellFee);
-            return (ratio - 1) * 100;
-        }
-
-        function calculateMinAmount(buyPrice, buyFee, sellPrice, sellFee, minFee = 0) {
-            const efficiency = calculateEfficiency(buyPrice, buyFee, sellPrice, sellFee);
-            if (efficiency <= 0) return Infinity;
-            return minFee > 0 ? (minFee * 100 / efficiency) : 0;
-        }
-
-        function estimateLiquidity(coin, price) {
+        function updateStatus(connected, connectedCount = 0, totalCount = 0) {
+            isConnected = connected;
             
-            const highLiquidityCoins = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'XRPUSDT', 'SOLUSDT'];
-            const mediumLiquidityCoins = ['ADAUSDT', 'DOTUSDT', 'AVAXUSDT', 'LINKUSDT', 'UNIUSDT', 'ATOMUSDT'];
-            
-            if (highLiquidityCoins.includes(coin)) {
-                return price > 1000 ? 50000 : 25000;
-            } else if (mediumLiquidityCoins.includes(coin)) {
-                return price > 10 ? 20000 : 10000;
+            if (connected) {
+                statusBar.className = 'status-bar connected';
+                statusBar.textContent = `✅ Python сервис подключен | ${connectedCount}/${totalCount} бирж`;
             } else {
-                return price > 1 ? 5000 : 2000;
+                statusBar.className = 'status-bar disconnected';
+                statusBar.textContent = '❌ Нет подключения к Python сервису';
             }
         }
 
-        function calculateWeightedPrice(basePrice, amount, liquidity, isBuy = true) {
-            if (amount < liquidity * 0.1) {
-                return basePrice;
-            }
-            
-            const utilization = Math.min(amount / liquidity, 1);
-            const slippage = utilization * utilization * 0.005;
-            
-            if (isBuy) {
-                return basePrice * (1 + slippage);
-            } else {
-                return basePrice * (1 - slippage);
-            }
-        }
-
-        function calculateOptimalEntryAmount(coin, buyPrice, sellPrice, buyFee, sellFee, maxSlippage = 0.1) {
-            const liquidity = estimateLiquidity(coin, buyPrice);
-            const efficiency = calculateEfficiency(buyPrice, buyFee, sellPrice, sellFee);
-            
-            if (efficiency <= 0) return { optimalAmount: 0, reason: 'Арбитраж убыточен' };
-            
-            let optimalAmount = 0;
-            let maxProfit = -Infinity;
-            
-            const testAmounts = [100, 250, 500, 1000, 2500, 5000, 10000];
-            
-            for (const amount of testAmounts) {
-                if (amount > liquidity * 2) break;
-                
-                const actualBuyPrice = calculateWeightedPrice(buyPrice, amount, liquidity, true);
-                const actualSellPrice = calculateWeightedPrice(sellPrice, amount, liquidity, false);
-                
-                const buySlippage = ((actualBuyPrice - buyPrice) / buyPrice) * 100;
-                const sellSlippage = ((sellPrice - actualSellPrice) / sellPrice) * 100;
-                const totalSlippage = buySlippage + sellSlippage;
-                
-                if (totalSlippage > maxSlippage) {
-                    break;
-                }
-                
-                const profit = calculateProfit(actualBuyPrice, buyFee, actualSellPrice, sellFee, amount);
-                
-                if (profit > maxProfit) {
-                    maxProfit = profit;
-                    optimalAmount = amount;
-                }
-            }
-            
-            return {
-                optimalAmount,
-                maxProfit,
-                liquidity,
-                reason: optimalAmount > 0 ? 'Оптимальная сумма найдена' : 'Недостаточная ликвидность'
-            };
-        }
-
-        function calculateRecommendations(coin, buyPrice, buyFee, sellPrice, sellFee) {
-            const efficiency = calculateEfficiency(buyPrice, buyFee, sellPrice, sellFee);
-            const isProfitable = efficiency > 0;
-            
-            const optimalEntry = calculateOptimalEntryAmount(coin, buyPrice, sellPrice, buyFee, sellFee);
-            
-            const recommendations = CONFIG.AMOUNTS.map(amount => {
-                const liquidity = estimateLiquidity(coin, buyPrice);
-                const actualBuyPrice = calculateWeightedPrice(buyPrice, amount, liquidity, true);
-                const actualSellPrice = calculateWeightedPrice(sellPrice, amount, liquidity, false);
-                
-                const profit = calculateProfit(actualBuyPrice, buyFee, actualSellPrice, sellFee, amount);
-                const buySlippage = ((actualBuyPrice - buyPrice) / buyPrice) * 100;
-                const sellSlippage = ((sellPrice - actualSellPrice) / sellPrice) * 100;
-                
-                return {
-                    amount,
-                    profit,
-                    roi: efficiency,
-                    slippage: buySlippage + sellSlippage,
-                    actualBuyPrice,
-                    actualSellPrice
-                };
-            });
-            
-            return {
-                efficiency,
-                isProfitable,
-                optimalAmount: optimalEntry.optimalAmount || (isProfitable ? 500 : 0),
-                maxProfit: optimalEntry.maxProfit,
-                liquidity: optimalEntry.liquidity,
-                recommendations
-            };
-        }
-
-        
-        function initBinance() {
-            if (wsConnections.binance?.readyState === WebSocket.OPEN) return;
-            
-            const ws = new WebSocket('wss://stream.binance.com:9443/ws/!bookTicker');
-            wsConnections.binance = ws;
-            
-            ws.onopen = () => {
-                log('binance', '✅ Connected');
-                connectionStatus.binance = true;
-                updateStatusBar();
-            };
-            
-            ws.onmessage = (e) => {
-                try {
-                    const d = JSON.parse(e.data);
-                    if (d.s && d.b && d.a) {
-                        savePrice('binance', d.s, parseFloat(d.b), parseFloat(d.a));
-                    }
-                } catch (err) {}
-            };
-            
-            ws.onerror = ws.onclose = () => {
-                connectionStatus.binance = false;
-                updateStatusBar();
-                setTimeout(initBinance, CONFIG.RECONNECT_DELAY);
-            };
-        }
-
-        
-        function initBybit() {
-            if (wsConnections.bybit?.readyState === WebSocket.OPEN) return;
-            
-            const ws = new WebSocket('wss://stream.bybit.com/v5/public/spot');
-            wsConnections.bybit = ws;
-            
-            ws.onopen = () => {
-                log('bybit', '✅ Connected');
-                connectionStatus.bybit = true;
-                updateStatusBar();
-                ws.send(JSON.stringify({
-                    op: 'subscribe',
-                    args: COINS.map(c => `orderbook.1.${c}`)
-                }));
-            };
-            
-            ws.onmessage = (e) => {
-                try {
-                    const d = JSON.parse(e.data);
-                    if (d.topic?.startsWith('orderbook.1.')) {
-                        const symbol = d.topic.replace('orderbook.1.', '');
-                        if (d.data?.b?.[0] && d.data?.a?.[0]) {
-                            savePrice('bybit', symbol, parseFloat(d.data.b[0][0]), parseFloat(d.data.a[0][0]));
-                        }
-                    }
-                } catch (err) {}
-            };
-            
-            ws.onerror = ws.onclose = () => {
-                connectionStatus.bybit = false;
-                updateStatusBar();
-                setTimeout(initBybit, CONFIG.RECONNECT_DELAY);
-            };
-        }
-
-        
-        function initOkx() {
-            if (wsConnections.okx?.readyState === WebSocket.OPEN) return;
-            
-            const ws = new WebSocket('wss://ws.okx.com:8443/ws/v5/public');
-            wsConnections.okx = ws;
-            
-            ws.onopen = () => {
-                log('okx', '✅ Connected');
-                connectionStatus.okx = true;
-                updateStatusBar();
-                ws.send(JSON.stringify({
-                    op: 'subscribe',
-                    args: COINS.map(c => ({ channel: 'tickers', instId: c.replace('USDT', '-USDT') }))
-                }));
-            };
-            
-            ws.onmessage = (e) => {
-                try {
-                    const d = JSON.parse(e.data);
-                    if (d.data?.[0]?.instId) {
-                        const symbol = d.data[0].instId.replace('-', '');
-                        savePrice('okx', symbol, parseFloat(d.data[0].bidPx), parseFloat(d.data[0].askPx));
-                    }
-                } catch (err) {}
-            };
-            
-            ws.onerror = ws.onclose = () => {
-                connectionStatus.okx = false;
-                updateStatusBar();
-                setTimeout(initOkx, CONFIG.RECONNECT_DELAY);
-            };
-        }
-
-        
-        async function initKucoin() {
-            if (wsConnections.kucoin?.readyState === WebSocket.OPEN) return;
-            
+        async function fetchPrices() {
             try {
-                const resp = await fetch('https://api.kucoin.com/api/v1/bullet-public', { method: 'POST' });
-                const json = await resp.json();
+                const response = await fetch(`${API_URL}/api/webapp/prices`);
                 
-                if (json.code !== '200000' || !json.data?.token) {
-                    log('kucoin', '❌ Failed to get token');
-                    connectionStatus.kucoin = false;
-                    updateStatusBar();
-                    setTimeout(initKucoin, CONFIG.RECONNECT_DELAY);
-                    return;
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
                 }
                 
-                const { token, instanceServers } = json.data;
-                const endpoint = instanceServers[0].endpoint;
-                const ws = new WebSocket(`${endpoint}?token=${token}`);
-                wsConnections.kucoin = ws;
+                const result = await response.json();
                 
-                ws.onopen = () => {
-                    log('kucoin', '✅ Connected');
-                    connectionStatus.kucoin = true;
-                    updateStatusBar();
-                    
-                    COINS.forEach((coin, i) => {
-                        setTimeout(() => {
-                            if (ws.readyState === WebSocket.OPEN) {
-                                ws.send(JSON.stringify({
-                                    id: Date.now() + i,
-                                    type: 'subscribe',
-                                    topic: `/market/ticker:${coin.replace('USDT', '-USDT')}`,
-                                    privateChannel: false,
-                                    response: false
-                                }));
-                            }
-                        }, i * 30);
+                if (result.success && result.data) {
+                    const totalPrices = Object.values(result.data).reduce((sum, ex) => sum + Object.keys(ex).length, 0);
+                    const exchangeCount = new Set();
+                    Object.values(result.data).forEach(exchanges => {
+                        Object.keys(exchanges).forEach(ex => exchangeCount.add(ex));
                     });
-                };
+                    
+                    updateStatus(true, exchangeCount.size, Object.keys(FEES).length);
+                    renderArbitrage(result.data);
+                } else {
+                    throw new Error(result.error || 'No data');
+                }
                 
-                ws.onmessage = (e) => {
-                    try {
-                        const d = JSON.parse(e.data);
-                        if (d.type === 'ping') {
-                            ws.send(JSON.stringify({ id: d.id, type: 'pong' }));
-                            return;
-                        }
-                        if (d.type === 'message' && d.data) {
-                            const symbol = d.topic?.split(':')[1]?.replace('-', '');
-                            if (symbol && d.data.bestBid && d.data.bestAsk) {
-                                savePrice('kucoin', symbol, parseFloat(d.data.bestBid), parseFloat(d.data.bestAsk));
-                            }
-                        }
-                    } catch (err) {}
-                };
-                
-                ws.onerror = ws.onclose = () => {
-                    connectionStatus.kucoin = false;
-                    updateStatusBar();
-                    setTimeout(initKucoin, CONFIG.RECONNECT_DELAY);
-                };
-            } catch (err) {
-                log('kucoin', '❌ Error:', err);
-                connectionStatus.kucoin = false;
-                updateStatusBar();
-                setTimeout(initKucoin, CONFIG.RECONNECT_DELAY);
+            } catch (error) {
+                console.error('Fetch error:', error);
+                updateStatus(false);
+                contentDiv.innerHTML = `
+                    <div class="loading">
+                        ❌ Ошибка подключения к Python сервису<br><br>
+                        Убедитесь что сервис запущен:<br>
+                        <code>./start-python-service.sh</code>
+                    </div>
+                `;
             }
         }
 
-        
-        function initBitget() {
-            if (wsConnections.bitget?.readyState === WebSocket.OPEN) return;
-            
-            const ws = new WebSocket('wss://ws.bitget.com/v2/ws/public');
-            wsConnections.bitget = ws;
-            
-            ws.onopen = () => {
-                log('bitget', '✅ Connected');
-                connectionStatus.bitget = true;
-                updateStatusBar();
-                ws.send(JSON.stringify({
-                    op: 'subscribe',
-                    args: COINS.map(c => ({ instType: 'SPOT', channel: 'books1', instId: c }))
-                }));
-            };
-            
-            ws.onmessage = (e) => {
-                try {
-                    const d = JSON.parse(e.data);
-                    if (d.data?.[0]) {
-                        const ticker = d.data[0];
-                        const symbol = ticker.instId || d.arg?.instId;
-                        const bid = ticker.bids?.[0]?.[0] || ticker.bidPr;
-                        const ask = ticker.asks?.[0]?.[0] || ticker.askPr;
-                        if (symbol && bid && ask) {
-                            savePrice('bitget', symbol, parseFloat(bid), parseFloat(ask));
-                        }
-                    }
-                } catch (err) {}
-            };
-            
-            ws.onerror = ws.onclose = () => {
-                connectionStatus.bitget = false;
-                updateStatusBar();
-                setTimeout(initBitget, CONFIG.RECONNECT_DELAY);
-            };
-        }
-
-        
-        function initHuobi() {
-            if (wsConnections.huobi?.readyState === WebSocket.OPEN) return;
-            
-            const ws = new WebSocket('wss://api.huobi.pro/ws');
-            wsConnections.huobi = ws;
-            
-            ws.onopen = () => {
-                log('huobi', '✅ Connected');
-                connectionStatus.huobi = true;
-                updateStatusBar();
-                COINS.forEach(coin => {
-                    ws.send(JSON.stringify({
-                        sub: `market.${coin.toLowerCase()}.bbo`,
-                        id: coin
-                    }));
-                });
-            };
-            
-            ws.onmessage = async (e) => {
-                try {
-                    let data;
-                    if (e.data instanceof Blob) {
-                        const arrayBuffer = await e.data.arrayBuffer();
-                        const uint8Array = new Uint8Array(arrayBuffer);
-                        const text = pako.inflate(uint8Array, { to: 'string' });
-                        data = JSON.parse(text);
-                    } else {
-                        data = JSON.parse(e.data);
-                    }
-                    
-                    if (data.ping) {
-                        ws.send(JSON.stringify({ pong: data.ping }));
-                        return;
-                    }
-                    
-                    if (data.tick && data.ch) {
-                        const symbol = data.ch.replace('market.', '').replace('.bbo', '').toUpperCase();
-                        if (data.tick.bid && data.tick.ask) {
-                            savePrice('huobi', symbol, parseFloat(data.tick.bid), parseFloat(data.tick.ask));
-                        }
-                    }
-                } catch (err) {}
-            };
-            
-            ws.onerror = ws.onclose = () => {
-                connectionStatus.huobi = false;
-                updateStatusBar();
-                setTimeout(initHuobi, CONFIG.RECONNECT_DELAY);
-            };
-        }
-
-        
-        function initCoinbase() {
-            if (wsConnections.coinbase?.readyState === WebSocket.OPEN) return;
-            
-            const ws = new WebSocket('wss://ws-feed.exchange.coinbase.com');
-            wsConnections.coinbase = ws;
-            
-            ws.onopen = () => {
-                log('coinbase', '✅ Connected');
-                connectionStatus.coinbase = true;
-                updateStatusBar();
-                ws.send(JSON.stringify({
-                    type: 'subscribe',
-                    product_ids: COINS.map(c => c.replace('USDT', '-USDT')),
-                    channels: ['ticker']
-                }));
-            };
-            
-            ws.onmessage = (e) => {
-                try {
-                    const d = JSON.parse(e.data);
-                    if (d.type === 'ticker' && d.product_id && d.best_bid && d.best_ask) {
-                        const symbol = d.product_id.replace('-', '');
-                        savePrice('coinbase', symbol, parseFloat(d.best_bid), parseFloat(d.best_ask));
-                    }
-                } catch (err) {}
-            };
-            
-            ws.onerror = ws.onclose = () => {
-                connectionStatus.coinbase = false;
-                updateStatusBar();
-                setTimeout(initCoinbase, CONFIG.RECONNECT_DELAY);
-            };
-        }
-
-        
-        function initBitfinex() {
-            if (wsConnections.bitfinex?.readyState === WebSocket.OPEN) return;
-            
-            const ws = new WebSocket('wss://api-pub.bitfinex.com/ws/2');
-            wsConnections.bitfinex = ws;
-            bitfinexChannels.clear();
-            
-            ws.onopen = () => {
-                log('bitfinex', '✅ Connected');
-                connectionStatus.bitfinex = true;
-                updateStatusBar();
-                COINS.forEach((coin, i) => {
-                    setTimeout(() => {
-                        if (ws.readyState === WebSocket.OPEN) {
-                            const base = coin.replace('USDT', '');
-                            ws.send(JSON.stringify({
-                                event: 'subscribe',
-                                channel: 'ticker',
-                                symbol: `t${base}:USDT`
-                            }));
-                        }
-                    }, i * 50);
-                });
-            };
-            
-            ws.onmessage = (e) => {
-                try {
-                    const d = JSON.parse(e.data);
-                    
-                    if (d.event === 'subscribed' && d.chanId && d.symbol) {
-                        const symbol = d.symbol.replace('t', '').replace(':', '') + 'USDT';
-                        bitfinexChannels.set(d.chanId, symbol.replace('USDTUSDT', 'USDT'));
-                        return;
-                    }
-                    
-                    if (Array.isArray(d) && d.length >= 2 && Array.isArray(d[1]) && d[1].length >= 4) {
-                        const symbol = bitfinexChannels.get(d[0]);
-                        if (symbol) {
-                            savePrice('bitfinex', symbol, parseFloat(d[1][0]), parseFloat(d[1][2]));
-                        }
-                    }
-                } catch (err) {}
-            };
-            
-            ws.onerror = ws.onclose = () => {
-                connectionStatus.bitfinex = false;
-                updateStatusBar();
-                setTimeout(initBitfinex, CONFIG.RECONNECT_DELAY);
-            };
-        }
-
-        
-        function initBingx() {
-            if (wsConnections.bingx?.readyState === WebSocket.OPEN) return;
-            
-            const ws = new WebSocket('wss://open-api-ws.bingx.com/market');
-            wsConnections.bingx = ws;
-            
-            ws.onopen = () => {
-                log('bingx', '✅ Connected');
-                connectionStatus.bingx = true;
-                updateStatusBar();
-                COINS.forEach((coin, i) => {
-                    setTimeout(() => {
-                        if (ws.readyState === WebSocket.OPEN) {
-                            const symbol = coin.replace('USDT', '-USDT');
-                            ws.send(JSON.stringify({
-                                id: Date.now().toString(),
-                                reqType: 'sub',
-                                dataType: `${symbol}@bookTicker`
-                            }));
-                        }
-                    }, i * 30);
-                });
-            };
-            
-            ws.onmessage = async (e) => {
-                try {
-                    let data;
-                    if (e.data instanceof Blob) {
-                        const arrayBuffer = await e.data.arrayBuffer();
-                        const uint8Array = new Uint8Array(arrayBuffer);
-                        try {
-                            const text = pako.inflate(uint8Array, { to: 'string' });
-                            data = JSON.parse(text);
-                        } catch {
-                            const text = new TextDecoder().decode(uint8Array);
-                            data = JSON.parse(text);
-                        }
-                    } else {
-                        data = JSON.parse(e.data);
-                    }
-                    
-                    if (data.ping) {
-                        ws.send(JSON.stringify({ pong: data.ping }));
-                        return;
-                    }
-                    
-                    if (data.data) {
-                        const d = data.data;
-                        const symbol = (d.s || d.symbol || '').replace('-', '');
-                        if (symbol && d.b && d.a) {
-                            savePrice('bingx', symbol, parseFloat(d.b), parseFloat(d.a));
-                        } else if (symbol && d.bidPrice && d.askPrice) {
-                            savePrice('bingx', symbol, parseFloat(d.bidPrice), parseFloat(d.askPrice));
-                        }
-                    }
-                } catch (err) {}
-            };
-            
-            ws.onerror = ws.onclose = () => {
-                connectionStatus.bingx = false;
-                updateStatusBar();
-                setTimeout(initBingx, CONFIG.RECONNECT_DELAY);
-            };
-        }
-
-        
-        function initKraken() {
-            if (wsConnections.kraken?.readyState === WebSocket.OPEN) return;
-            
-            const ws = new WebSocket('wss://ws.kraken.com/v2');
-            wsConnections.kraken = ws;
-            
-            ws.onopen = () => {
-                log('kraken', '✅ Connected');
-                connectionStatus.kraken = true;
-                updateStatusBar();
-                const krakenSymbols = COINS.map(c => {
-                    const base = c.replace('USDT', '');
-                    return (base === 'BTC' ? 'XBT' : base) + '/USDT';
-                });
-                ws.send(JSON.stringify({
-                    method: 'subscribe',
-                    params: {
-                        channel: 'ticker',
-                        symbol: krakenSymbols
-                    }
-                }));
-            };
-            
-            ws.onmessage = (e) => {
-                try {
-                    const d = JSON.parse(e.data);
-                    if (d.channel === 'ticker' && d.data && d.data.length > 0) {
-                        d.data.forEach(ticker => {
-                            const pair = (ticker.symbol || '').replace('XBT', 'BTC').replace('/', '');
-                            if (pair && ticker.bid && ticker.ask) {
-                                savePrice('kraken', pair, parseFloat(ticker.bid), parseFloat(ticker.ask));
-                            }
-                        });
-                    }
-                } catch (err) {}
-            };
-            
-            ws.onerror = ws.onclose = () => {
-                connectionStatus.kraken = false;
-                updateStatusBar();
-                setTimeout(initKraken, CONFIG.RECONNECT_DELAY);
-            };
-        }
-
-        
-        function initGateio() {
-            if (wsConnections.gateio?.readyState === WebSocket.OPEN) return;
-            
-            const ws = new WebSocket('wss://api.gateio.ws/ws/v4/');
-            wsConnections.gateio = ws;
-            
-            ws.onopen = () => {
-                log('gateio', '✅ Connected');
-                connectionStatus.gateio = true;
-                updateStatusBar();
-                COINS.forEach((coin, i) => {
-                    setTimeout(() => {
-                        if (ws.readyState === WebSocket.OPEN) {
-                            const symbol = coin.replace('USDT', '_USDT');
-                            ws.send(JSON.stringify({
-                                time: Math.floor(Date.now() / 1000),
-                                channel: 'spot.tickers',
-                                event: 'subscribe',
-                                payload: [symbol]
-                            }));
-                        }
-                    }, i * 50);
-                });
-            };
-            
-            ws.onmessage = (e) => {
-                try {
-                    const d = JSON.parse(e.data);
-                    if (d.event === 'update' && d.result) {
-                        const ticker = d.result;
-                        const symbol = (ticker.currency_pair || '').replace('_', '');
-                        if (symbol && ticker.highest_bid && ticker.lowest_ask) {
-                            savePrice('gateio', symbol, parseFloat(ticker.highest_bid), parseFloat(ticker.lowest_ask));
-                        }
-                    }
-                } catch (err) {}
-            };
-            
-            ws.onerror = ws.onclose = () => {
-                connectionStatus.gateio = false;
-                updateStatusBar();
-                setTimeout(initGateio, CONFIG.RECONNECT_DELAY);
-            };
-        }
-
-        
-        function initPoloniex() {
-            if (wsConnections.poloniex?.readyState === WebSocket.OPEN) return;
-            
-            const ws = new WebSocket('wss://ws.poloniex.com/ws/public');
-            wsConnections.poloniex = ws;
-            
-            ws.onopen = () => {
-                log('poloniex', '✅ Connected');
-                connectionStatus.poloniex = true;
-                updateStatusBar();
-                const poloniexSymbols = COINS.map(c => c.replace('USDT', '_USDT'));
-                ws.send(JSON.stringify({
-                    event: 'subscribe',
-                    channel: ['ticker'],
-                    symbols: poloniexSymbols
-                }));
-            };
-            
-            ws.onmessage = (e) => {
-                try {
-                    const d = JSON.parse(e.data);
-                    if (d.channel === 'ticker' && d.data && d.data.length > 0) {
-                        d.data.forEach(ticker => {
-                            const symbol = (ticker.symbol || '').replace('_', '');
-                            if (symbol && ticker.bestBid && ticker.bestAsk) {
-                                savePrice('poloniex', symbol, parseFloat(ticker.bestBid), parseFloat(ticker.bestAsk));
-                            }
-                        });
-                    }
-                } catch (err) {}
-            };
-            
-            ws.onerror = ws.onclose = () => {
-                connectionStatus.poloniex = false;
-                updateStatusBar();
-                setTimeout(initPoloniex, CONFIG.RECONNECT_DELAY);
-            };
-        }
-
-        
-        function initBitstamp() {
-            if (wsConnections.bitstamp?.readyState === WebSocket.OPEN) return;
-            
-            const ws = new WebSocket('wss://ws.bitstamp.net');
-            wsConnections.bitstamp = ws;
-            
-            ws.onopen = () => {
-                log('bitstamp', '✅ Connected');
-                connectionStatus.bitstamp = true;
-                updateStatusBar();
-                COINS.slice(0, 15).forEach((coin, i) => {
-                    setTimeout(() => {
-                        if (ws.readyState === WebSocket.OPEN) {
-                            const base = coin.replace('USDT', '').toLowerCase();
-                            ws.send(JSON.stringify({
-                                event: 'bts:subscribe',
-                                data: { channel: `order_book_${base}usdt` }
-                            }));
-                        }
-                    }, i * 100);
-                });
-            };
-            
-            ws.onmessage = (e) => {
-                try {
-                    const d = JSON.parse(e.data);
-                    if (d.event === 'data' && d.channel && d.data) {
-                        const pair = d.channel.replace('order_book_', '').toUpperCase();
-                        const data = d.data;
-                        if (data.bids && data.bids.length > 0 && data.asks && data.asks.length > 0) {
-                            savePrice('bitstamp', pair, parseFloat(data.bids[0][0]), parseFloat(data.asks[0][0]));
-                        }
-                    }
-                } catch (err) {}
-            };
-            
-            ws.onerror = ws.onclose = () => {
-                connectionStatus.bitstamp = false;
-                updateStatusBar();
-                setTimeout(initBitstamp, CONFIG.RECONNECT_DELAY);
-            };
-        }
-
-        
-        function initGemini() {
-            if (wsConnections.gemini?.readyState === WebSocket.OPEN) return;
-            
-            const ws = new WebSocket('wss://api.gemini.com/v2/marketdata');
-            wsConnections.gemini = ws;
-            
-            ws.onopen = () => {
-                log('gemini', '✅ Connected');
-                connectionStatus.gemini = true;
-                updateStatusBar();
-                const geminiSymbols = COINS.slice(0, 20).map(c => c.replace('USDT', 'USD'));
-                ws.send(JSON.stringify({
-                    type: 'subscribe',
-                    subscriptions: [{ name: 'l2', symbols: geminiSymbols }]
-                }));
-            };
-            
-            ws.onmessage = (e) => {
-                try {
-                    const d = JSON.parse(e.data);
-                    if (d.type === 'l2_updates' && d.symbol && d.changes) {
-                        const symbol = d.symbol.toUpperCase().replace('USD', 'USDT');
-                        let bid = 0, ask = Infinity;
-                        d.changes.forEach(change => {
-                            const price = parseFloat(change[1]);
-                            if (change[0] === 'buy' && price > bid) {
-                                bid = price;
-                            } else if (change[0] === 'sell' && price < ask && price > 0) {
-                                ask = price;
-                            }
-                        });
-                        if (bid > 0 && ask < Infinity) {
-                            savePrice('gemini', symbol, bid, ask);
-                        }
-                    }
-                } catch (err) {}
-            };
-            
-            ws.onerror = ws.onclose = () => {
-                connectionStatus.gemini = false;
-                updateStatusBar();
-                setTimeout(initGemini, CONFIG.RECONNECT_DELAY);
-            };
-        }
-
-        
-        function updateStatusBar() {
-            const connected = Object.values(connectionStatus).filter(Boolean).length;
-            const total = Object.keys(connectionStatus).length;
-            
-            let className = 'disconnected';
-            let text = `❌ Нет подключений`;
-            
-            if (connected === total) {
-                className = 'connected';
-                text = `✅ Все ${total} бирж подключены`;
-            } else if (connected > 0) {
-                className = 'connecting';
-                text = `⏳ Подключение: ${connected}/${total} бирж`;
-            }
-            
-            statusBar.className = `status-bar ${className}`;
-            statusBar.textContent = text;
-        }
-
-        function scheduleUpdate() {
-            const now = Date.now();
-            if (now - lastUpdate < CONFIG.UPDATE_THROTTLE) {
-                if (updateTimer) clearTimeout(updateTimer);
-                updateTimer = setTimeout(() => {
-                    lastUpdate = Date.now();
-                    render();
-                }, CONFIG.UPDATE_THROTTLE);
-                return;
-            }
-            lastUpdate = now;
-            if (updateTimer) clearTimeout(updateTimer);
-            render();
-        }
-
-        function render() {
+        function renderArbitrage(data) {
             const results = [];
             const exchangeIds = Object.keys(FEES);
             
-            for (const coin of COINS) {
-                const allExchangeData = exchangeIds
-                    .map(id => ({
+            for (const [coin, exchanges] of Object.entries(data)) {
+                const allExchangeData = exchangeIds.map(id => {
+                    const exData = exchanges[id];
+                    return {
                         id,
                         name: EXCHANGE_NAMES[id],
                         fee: FEES[id],
-                        data: prices[id][coin],
-                        hasData: prices[id][coin]?.bid > 0 && prices[id][coin]?.ask > 0
-                    }));
+                        data: exData && exData.bid && exData.ask ? { bid: exData.bid, ask: exData.ask } : null,
+                        hasData: exData && exData.bid > 0 && exData.ask > 0
+                    };
+                });
                 
                 const exchangeData = allExchangeData.filter(e => e.hasData);
                 
@@ -1071,7 +262,7 @@
                         const profit = calculateProfit(
                             buyEx.data.ask, buyEx.fee,
                             sellEx.data.bid, sellEx.fee,
-                            CONFIG.TRADE_AMOUNT
+                            100
                         );
                         
                         if (profit > best.profit) {
@@ -1089,18 +280,11 @@
                 }
                 
                 if (best.scenario) {
-                    const recs = calculateRecommendations(
-                        coin,
-                        best.buyEx.data.ask, best.buyEx.fee,
-                        best.sellEx.data.bid, best.sellEx.fee
-                    );
-                    
                     results.push({
                         coin,
                         profit: best.profit,
                         scenario: best.scenario,
                         exchanges: allExchangeData,
-                        recommendations: recs,
                         buyPrice: best.buyEx.data.ask,
                         sellPrice: best.sellEx.data.bid,
                         buyEx: best.buyEx,
@@ -1110,16 +294,17 @@
             }
             
             results.sort((a, b) => b.profit - a.profit);
-            const topResults = results.slice(0, CONFIG.TOP_RESULTS);
+            
+            const profitableResults = results.filter(r => r.profit >= 0);
+            const topResults = profitableResults.length > 0 
+                ? profitableResults.slice(0, 50)
+                : results.slice(0, 20);
             
             if (topResults.length === 0) {
-                const totalPrices = Object.values(prices).reduce((sum, p) => sum + Object.keys(p).length, 0);
                 contentDiv.innerHTML = `
                     <div class="loading">
-                        ${totalPrices === 0 
-                            ? '⏳ Ожидание данных с бирж...' 
-                            : '⚠️ Недостаточно данных для расчета'}
-                        <br><br>Получено цен: ${totalPrices}
+                        ⏳ Ожидание данных...<br><br>
+                        Python сервис собирает цены со всех бирж
                     </div>
                 `;
                 return;
@@ -1135,52 +320,31 @@
             for (const result of topResults) {
                 const isPositive = result.profit >= 0;
                 const profitText = isPositive ? `+${formatPrice(result.profit)}` : formatPrice(result.profit);
-                const recs = result.recommendations;
                 
                 let exchangesHtml = '';
                 for (const ex of result.exchanges) {
                     if (ex.hasData) {
+                        const isBest = (ex.id === result.buyEx.id || ex.id === result.sellEx.id);
+                        const style = isBest ? 'font-weight: 700;' : '';
                         exchangesHtml += `
                             <div class="exchange-row">
-                                <span class="exchange-name">${ex.name}:</span>
-                                <span class="exchange-prices">
+                                <span class="exchange-name" style="${style}">${ex.name}:</span>
+                                <span class="exchange-prices" style="${style}">
                                     Покупка ${formatPrice(ex.data.ask)} | Продажа ${formatPrice(ex.data.bid)}
                                 </span>
                             </div>
                         `;
                     } else {
-                        const isConnected = connectionStatus[ex.id];
                         exchangesHtml += `
                             <div class="exchange-row" style="opacity: 0.5;">
                                 <span class="exchange-name">${ex.name}:</span>
                                 <span class="exchange-prices" style="color: var(--hint-color); font-style: italic;">
-                                    ${isConnected ? '⏳ Ожидание данных...' : '❌ Нет подключения'}
+                                    ⏳ Ожидание данных...
                                 </span>
                             </div>
                         `;
                     }
                 }
-                
-                let recsHtml = '';
-                const showAmounts = [100, 500, 1000, 2500];
-                for (const amount of showAmounts) {
-                    const rec = recs.recommendations.find(r => r.amount === amount);
-                    if (rec) {
-                        const isOptimal = amount === recs.optimalAmount;
-                        const profitClass = rec.profit >= 0 ? 'positive' : 'negative';
-                        const profitSign = rec.profit >= 0 ? '+' : '';
-                        const slippageText = rec.slippage > 0.01 ? ` (проседание: ${rec.slippage.toFixed(3)}%)` : '';
-                        recsHtml += `
-                            <div class="rec-item">
-                                <span class="rec-amount">${amount} USDT${isOptimal ? '<span class="optimal-badge">⭐ Оптимально</span>' : ''}</span>
-                                <span class="rec-profit ${profitClass}">${profitSign}${formatPrice(rec.profit)} USDT${slippageText}</span>
-                            </div>
-                        `;
-                    }
-                }
-                
-                const effClass = recs.efficiency >= 0 ? 'positive' : 'negative';
-                const effSign = recs.efficiency >= 0 ? '+' : '';
                 
                 html += `
                     <div class="arbitrage-card ${isPositive ? 'positive' : 'negative'}">
@@ -1195,44 +359,10 @@
                         
                         <div style="margin-top: 10px; padding: 10px; background: rgba(128, 128, 128, 0.05); border-radius: 8px; font-size: 12px; color: var(--hint-color);">
                             <div style="margin-bottom: 4px;"><strong>📋 Детали расчета (на 100 USDT):</strong></div>
-                            <div style="margin-bottom: 2px;">🛒 Покупка на ${result.scenario.buyExchange}: ${formatPrice(result.buyPrice)} USDT <span style="opacity: 0.7;">(дешевле)</span></div>
-                            <div style="margin-bottom: 2px;">💸 Продажа на ${result.scenario.sellExchange}: ${formatPrice(result.sellPrice)} USDT <span style="opacity: 0.7;">(дороже)</span></div>
-                            <div style="margin-bottom: 2px;">📊 Разница: ${formatPrice(result.sellPrice - result.buyPrice)} USDT/монета × ${formatPrice(100 / result.buyPrice)} монет</div>
-                            <div style="margin-bottom: 2px;">💳 Комиссии: ${(result.buyEx.fee * 100).toFixed(2)}% + ${(result.sellEx.fee * 100).toFixed(2)}% = ${((result.buyEx.fee + result.sellEx.fee) * 100).toFixed(2)}%</div>
+                            <div style="margin-bottom: 2px;">🛒 Покупка на ${result.scenario.buyExchange}: ${formatPrice(result.buyPrice)} USDT</div>
+                            <div style="margin-bottom: 2px;">💸 Продажа на ${result.scenario.sellExchange}: ${formatPrice(result.sellPrice)} USDT</div>
+                            <div style="margin-bottom: 2px;">💳 Комиссии: ${(result.buyEx.fee * 100).toFixed(2)}% + ${(result.sellEx.fee * 100).toFixed(2)}%</div>
                             <div style="color: ${isPositive ? 'var(--positive-color)' : 'var(--negative-color)'}; font-weight: 600;">💰 Чистая прибыль: ${profitText} USDT</div>
-                        </div>
-                        
-                        <div class="recommendation">
-                            <div class="recommendation-title">
-                                📊 Оптимальная сумма входа (с учетом ликвидности)
-                            </div>
-                            <div class="efficiency">
-                                <div class="efficiency-value ${effClass}">${effSign}${recs.efficiency.toFixed(3)}%</div>
-                                <div class="efficiency-label">Эффективность (ROI)</div>
-                            </div>
-                            ${recs.isProfitable && recs.optimalAmount > 0 ? `
-                                <div style="margin-top: 10px; padding: 10px; background: rgba(76, 175, 80, 0.1); border-radius: 8px;">
-                                    <div style="font-size: 14px; font-weight: 600; color: var(--positive-color); margin-bottom: 6px;">
-                                        ⭐ Рекомендуемая сумма: <strong>${recs.optimalAmount} USDT</strong>
-                                    </div>
-                                    <div style="font-size: 12px; color: var(--hint-color);">
-                                        💰 Прибыль: ~${formatPrice(recs.maxProfit || 0)} USDT<br>
-                                        📊 Оценка ликвидности: до ${Math.round(recs.liquidity / 1000)}k USDT без сильного проседания
-                                    </div>
-                                </div>
-                            ` : ''}
-                            <div class="recommendation-grid" style="margin-top: 10px;">
-                                ${recsHtml}
-                            </div>
-                            ${recs.isProfitable ? `
-                                <div style="margin-top: 10px; font-size: 11px; color: var(--hint-color);">
-                                    💡 Суммы рассчитаны с учетом проседания цены при покупке/продаже
-                                </div>
-                            ` : `
-                                <div style="margin-top: 10px; font-size: 12px; color: var(--negative-color);">
-                                    ⚠️ Арбитраж убыточный при любой сумме
-                                </div>
-                            `}
                         </div>
                     </div>
                 `;
@@ -1242,54 +372,20 @@
             contentDiv.innerHTML = html;
         }
 
-        
-        function initAll() {
-            console.log('🚀 Инициализация арбитражного приложения...');
-            console.log(`📊 Монет: ${COINS.length}, Бирж: ${Object.keys(FEES).length}`);
-            
-            updateStatusBar();
-            
-            initBinance();
-            initBybit();
-            initOkx();
-            initKucoin();
-            initBitget();
-            initHuobi();
-            initCoinbase();
-            initBitfinex();
-            initBingx();
-            initKraken();
-            initGateio();
-            initPoloniex();
-            initBitstamp();
-            initGemini();
-        }
-
-        function closeAll() {
-            Object.values(wsConnections).forEach(ws => {
-                if (ws) ws.close();
-            });
-        }
-
         refreshBtn.onclick = () => {
-            console.log('🔄 Переподключение...');
-            closeAll();
-            
-            Object.keys(prices).forEach(k => prices[k] = {});
-            Object.keys(connectionStatus).forEach(k => connectionStatus[k] = false);
-            bitfinexChannels.clear();
-            
-            contentDiv.innerHTML = '<div class="loading">⏳ Переподключение к биржам...</div>';
-            updateStatusBar();
-            
-            setTimeout(initAll, 1000);
+            console.log('🔄 Обновление данных...');
+            fetchPrices();
         };
 
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', initAll);
-        } else {
-            initAll();
+        function startAutoUpdate() {
+            if (updateTimer) clearInterval(updateTimer);
+            updateTimer = setInterval(fetchPrices, UPDATE_INTERVAL);
         }
+
+        console.log('🚀 Web App запущен (Python CCXT режим)');
+        fetchPrices();
+        startAutoUpdate();
     </script>
 </body>
 </html>
+
