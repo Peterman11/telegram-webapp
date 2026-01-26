@@ -124,8 +124,11 @@
     <script>
         'use strict';
         
-        const API_URL = 'http://127.0.0.1:5001';
+        const urlParams = new URLSearchParams(window.location.search);
+        const PYTHON_API_URL = urlParams.get('python_url') || null;
+        const USE_PYTHON = PYTHON_API_URL !== null;
         const UPDATE_INTERVAL = 3000;
+        let useWebSocketFallback = false;
         
         const FEES = {
             binance: 0.001,
@@ -198,39 +201,65 @@
         }
 
         async function fetchPrices() {
-            try {
-                const response = await fetch(`${API_URL}/api/webapp/prices`);
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP ${response.status}`);
-                }
-                
-                const result = await response.json();
-                
-                if (result.success && result.data) {
-                    const totalPrices = Object.values(result.data).reduce((sum, ex) => sum + Object.keys(ex).length, 0);
-                    const exchangeCount = new Set();
-                    Object.values(result.data).forEach(exchanges => {
-                        Object.keys(exchanges).forEach(ex => exchangeCount.add(ex));
+            if (USE_PYTHON && !useWebSocketFallback) {
+                try {
+                    const response = await fetch(`${PYTHON_API_URL}/api/webapp/prices`, {
+                        method: 'GET',
+                        headers: { 'Content-Type': 'application/json' },
+                        signal: AbortSignal.timeout(5000)
                     });
                     
-                    updateStatus(true, exchangeCount.size, Object.keys(FEES).length);
-                    renderArbitrage(result.data);
-                } else {
-                    throw new Error(result.error || 'No data');
+                    if (!response.ok) {
+                        throw new Error(`HTTP ${response.status}`);
+                    }
+                    
+                    const result = await response.json();
+                    
+                    if (result.success && result.data) {
+                        const totalPrices = Object.values(result.data).reduce((sum, ex) => sum + Object.keys(ex).length, 0);
+                        const exchangeCount = new Set();
+                        Object.values(result.data).forEach(exchanges => {
+                            Object.keys(exchanges).forEach(ex => exchangeCount.add(ex));
+                        });
+                        
+                        updateStatus(true, exchangeCount.size, Object.keys(FEES).length);
+                        renderArbitrage(result.data);
+                        return;
+                    } else {
+                        throw new Error(result.error || 'No data');
+                    }
+                    
+                } catch (error) {
+                    console.warn('Python service unavailable, switching to WebSocket:', error);
+                    useWebSocketFallback = true;
+                    initWebSocketMode();
+                    return;
                 }
-                
-            } catch (error) {
-                console.error('Fetch error:', error);
-                updateStatus(false);
-                contentDiv.innerHTML = `
-                    <div class="loading">
-                        ❌ Ошибка подключения к Python сервису<br><br>
-                        Убедитесь что сервис запущен:<br>
-                        <code>./start-python-service.sh</code>
-                    </div>
-                `;
             }
+            
+            if (!USE_PYTHON || useWebSocketFallback) {
+                if (!window.wsInitialized) {
+                    initWebSocketMode();
+                }
+            }
+        }
+        
+        function initWebSocketMode() {
+            console.log('Python service unavailable, showing instructions...');
+            window.wsInitialized = true;
+            updateStatus(false, 0, Object.keys(FEES).length);
+            contentDiv.innerHTML = `
+                <div class="loading">
+                    ⚠️ Python сервис недоступен<br><br>
+                    Для работы Web App нужен публичный URL Python сервиса<br><br>
+                    <strong>Варианты:</strong><br>
+                    1. Развернуть на <code>Railway.app</code> (бесплатно)<br>
+                    2. Развернуть на <code>Render.com</code> (бесплатно)<br>
+                    3. Использовать <code>ngrok</code> для теста<br><br>
+                    Затем добавь параметр:<br>
+                    <code>?python_url=https://your-service.com</code>
+                </div>
+            `;
         }
 
         function renderArbitrage(data) {
@@ -382,9 +411,24 @@
             updateTimer = setInterval(fetchPrices, UPDATE_INTERVAL);
         }
 
-        console.log('🚀 Web App запущен (Python CCXT режим)');
-        fetchPrices();
-        startAutoUpdate();
+        if (USE_PYTHON) {
+            console.log(`🚀 Web App запущен (Python CCXT режим: ${PYTHON_API_URL})`);
+        } else {
+            console.log('⚠️ Web App: Python URL не указан, нужен параметр ?python_url=...');
+            contentDiv.innerHTML = `
+                <div class="loading">
+                    ⚠️ Python сервис не настроен<br><br>
+                    Добавь параметр в URL:<br>
+                    <code>?python_url=https://your-service.com</code><br><br>
+                    Или разверни Python сервис на Railway/Render
+                </div>
+            `;
+        }
+        
+        if (USE_PYTHON) {
+            fetchPrices();
+            startAutoUpdate();
+        }
     </script>
 </body>
 </html>
