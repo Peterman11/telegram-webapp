@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Арбитраж криптовалют</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        :root {
+            --bg-color: var(--tg-theme-bg-color, #ffffff);
+            --text-color: var(--tg-theme-text-color, #000000);
+            --hint-color: var(--tg-theme-hint-color, #999999);
+            --button-color: var(--tg-theme-button-color, #3390ec);
+            --button-text-color: var(--tg-theme-button-text-color, #ffffff);
+            --secondary-bg: var(--tg-theme-secondary-bg-color, #f0f0f0);
+            --positive-color: #4caf50;
+            --negative-color: #ff4444;
+            --warning-color: #ff9800;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-color);
+            color: var(--text-color);
+            padding: 16px;
+            min-height: 100vh;
+            margin: 0;
+        }
+        .container { max-width: 600px; margin: 0 auto; }
+        h1 { font-size: 22px; margin-bottom: 16px; text-align: center; }
+        .status-bar {
+            text-align: center;
+            padding: 10px 16px;
+            margin-bottom: 12px;
+            border-radius: 10px;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        .status-bar.connected { background: var(--positive-color); color: white; }
+        .status-bar.connecting { background: var(--warning-color); color: white; }
+        .status-bar.disconnected { background: var(--negative-color); color: white; }
+        .loading {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--hint-color);
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        .arbitrage-list { display: flex; flex-direction: column; gap: 12px; }
+        .arbitrage-card {
+            background: var(--secondary-bg);
+            border-radius: 12px;
+            padding: 14px 16px;
+            border-left: 4px solid var(--button-color);
+        }
+        .arbitrage-card.positive { border-left-color: var(--positive-color); }
+        .arbitrage-card.negative { border-left-color: var(--negative-color); }
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        .coin-symbol { font-size: 17px; font-weight: 600; }
+        .profit-badge {
+            font-size: 16px;
+            font-weight: 700;
+            padding: 6px 12px;
+            border-radius: 8px;
+            color: white;
+        }
+        .profit-badge.positive { background: var(--positive-color); }
+        .profit-badge.negative { background: var(--negative-color); }
+        .exchanges-grid { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+        .exchange-row { display: flex; justify-content: space-between; align-items: center; }
+        .exchange-name { color: var(--hint-color); }
+        .exchange-prices { font-weight: 500; }
+        .scenario {
+            margin-top: 10px;
+            padding: 10px 12px;
+            background: linear-gradient(135deg, rgba(76, 175, 80, 0.15), rgba(76, 175, 80, 0.05));
+            border-radius: 8px;
+            border-left: 3px solid var(--positive-color);
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--positive-color);
+        }
+        .scenario.negative-scenario {
+            background: linear-gradient(135deg, rgba(255, 68, 68, 0.15), rgba(255, 68, 68, 0.05));
+            border-left-color: var(--negative-color);
+            color: var(--negative-color);
+        }
+        .summary {
+            text-align: center;
+            padding: 10px;
+            margin-bottom: 12px;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--hint-color);
+        }
+        .refresh-btn {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 12px;
+            border: none;
+            border-radius: 10px;
+            background: var(--button-color);
+            color: var(--button-text-color);
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📈 Арбитраж криптовалют</h1>
+        <div id="statusBar" class="status-bar disconnected">⏳ Подключение к Python сервису...</div>
+        <button id="refreshBtn" class="refresh-btn">🔄 Обновить данные</button>
+        <div id="content" class="arbitrage-list">
+            <div class="loading">⏳ Загрузка данных...</div>
+        </div>
+    </div>
+
+    <script>
+        'use strict';
+        
+        const urlParams = new URLSearchParams(window.location.search);
+        const pythonUrl = urlParams.get('python_url') || 'https://cryptobot-python-service-production.up.railway.app';
+        const API_URL = pythonUrl;
+        const UPDATE_INTERVAL = 3000;
+        
+        const FEES = {
+            binance: 0.001,
+            bybit: 0.001,
+            okx: 0.001,
+            kucoin: 0.001,
+            bitget: 0.001,
+            huobi: 0.002,
+            coinbase: 0.006,
+            bitfinex: 0.002,
+            bingx: 0.001,
+            kraken: 0.0026,
+            gateio: 0.002,
+            poloniex: 0.002,
+            bitstamp: 0.005,
+            gemini: 0.004,
+        };
+
+        const EXCHANGE_NAMES = {
+            binance: 'Binance',
+            bybit: 'Bybit',
+            okx: 'OKX',
+            kucoin: 'KuCoin',
+            bitget: 'Bitget',
+            huobi: 'Huobi',
+            coinbase: 'Coinbase',
+            bitfinex: 'Bitfinex',
+            bingx: 'BingX',
+            kraken: 'Kraken',
+            gateio: 'Gate.io',
+            poloniex: 'Poloniex',
+            bitstamp: 'Bitstamp',
+            gemini: 'Gemini',
+        };
+
+        const contentDiv = document.getElementById('content');
+        const statusBar = document.getElementById('statusBar');
+        const refreshBtn = document.getElementById('refreshBtn');
+        
+        let updateTimer = null;
+        let isConnected = false;
+
+        const tg = window.Telegram?.WebApp;
+        if (tg) { tg.ready(); tg.expand(); }
+
+        function formatPrice(num) {
+            if (!Number.isFinite(num)) return 'N/A';
+            return num.toFixed(2);
+        }
+
+        function calculateProfit(buyPrice, buyFee, sellPrice, sellFee, amount) {
+            if (!buyPrice || !sellPrice || buyPrice <= 0 || sellPrice <= 0) return -Infinity;
+            const afterBuyFee = amount * (1 - buyFee);
+            const crypto = afterBuyFee / buyPrice;
+            const gross = crypto * sellPrice;
+            const net = gross * (1 - sellFee);
+            return net - amount;
+        }
+
+        function updateStatus(connected, connectedCount = 0, totalCount = 0) {
+            isConnected = connected;
+            
+            if (connected) {
+                statusBar.className = 'status-bar connected';
+                statusBar.textContent = `✅ Python сервис подключен | ${connectedCount}/${totalCount} бирж`;
+            } else {
+                statusBar.className = 'status-bar disconnected';
+                statusBar.textContent = '❌ Нет подключения к Python сервису';
+            }
+        }
+
+        async function fetchPrices() {
+            try {
+                const response = await fetch(`${API_URL}/api/webapp/prices`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                
+                const result = await response.json();
+                
+                if (result.success && result.data) {
+                    const totalPrices = Object.values(result.data).reduce((sum, ex) => sum + Object.keys(ex).length, 0);
+                    const exchangeCount = new Set();
+                    Object.values(result.data).forEach(exchanges => {
+                        Object.keys(exchanges).forEach(ex => exchangeCount.add(ex));
+                    });
+                    
+                    updateStatus(true, exchangeCount.size, Object.keys(FEES).length);
+                    renderArbitrage(result.data);
+                } else {
+                    throw new Error(result.error || 'No data');
+                }
+                
+            } catch (error) {
+                console.error('Fetch error:', error);
+                updateStatus(false);
+                contentDiv.innerHTML = `
+                    <div class="loading">
+                        ❌ Ошибка подключения к Python сервису<br><br>
+                        Сервис должен быть доступен на Railway:<br>
+                        <code>${API_URL}</code>
+                    </div>
+                `;
+            }
+        }
+
+        function renderArbitrage(data) {
+            const results = [];
+            const skipped = [];
+            const exchangeIds = Object.keys(FEES);
+            
+            for (const [coin, exchanges] of Object.entries(data)) {
+                const allExchangeData = exchangeIds.map(id => {
+                    const exData = exchanges[id];
+                    return {
+                        id,
+                        name: EXCHANGE_NAMES[id],
+                        fee: FEES[id],
+                        data: exData && exData.bid && exData.ask ? { bid: exData.bid, ask: exData.ask } : null,
+                        hasData: exData && exData.bid > 0 && exData.ask > 0
+                    };
+                });
+                
+                const exchangeData = allExchangeData.filter(e => e.hasData);
+                
+                if (exchangeData.length < 2) {
+                    skipped.push(coin);
+                    continue;
+                }
+                
+                let best = { profit: -Infinity, scenario: null, buyEx: null, sellEx: null };
+                
+                for (const buyEx of exchangeData) {
+                    for (const sellEx of exchangeData) {
+                        if (buyEx.id === sellEx.id) continue;
+                        
+                        const profit = calculateProfit(
+                            buyEx.data.ask, buyEx.fee,
+                            sellEx.data.bid, sellEx.fee,
+                            100
+                        );
+                        
+                        if (profit > best.profit) {
+                            best = {
+                                profit,
+                                scenario: {
+                                    buyExchange: buyEx.name,
+                                    sellExchange: sellEx.name,
+                                },
+                                buyEx,
+                                sellEx
+                            };
+                        }
+                    }
+                }
+                
+                if (best.scenario) {
+                    results.push({
+                        coin,
+                        profit: best.profit,
+                        scenario: best.scenario,
+                        exchanges: allExchangeData,
+                        buyPrice: best.buyEx.data.ask,
+                        sellPrice: best.sellEx.data.bid,
+                        buyEx: best.buyEx,
+                        sellEx: best.sellEx,
+                    });
+                }
+            }
+            
+            results.sort((a, b) => b.profit - a.profit);
+            
+            const profitableResults = results.filter(r => r.profit >= 0);
+            const topResults = profitableResults.length > 0 
+                ? profitableResults.slice(0, 100)
+                : results.slice(0, 50);
+            
+            if (topResults.length === 0) {
+                contentDiv.innerHTML = `
+                    <div class="loading">
+                        ⏳ Ожидание данных...<br><br>
+                        Python сервис собирает цены со всех бирж
+                    </div>
+                `;
+                return;
+            }
+            
+            const positiveCount = topResults.filter(r => r.profit >= 0).length;
+            const totalCoins = Object.keys(data).length;
+            const shownCoins = topResults.length;
+            const skippedCount = skipped.length;
+            
+            let summaryText = `🏆 Показано ${shownCoins} из ${totalCoins} монет`;
+            if (positiveCount > 0) {
+                summaryText += ` | ${positiveCount} с прибылью`;
+            }
+            if (skippedCount > 0) {
+                summaryText += ` | ${skippedCount} пропущено (недостаточно данных)`;
+            }
+            
+            let html = `
+                <div class="summary">${summaryText}</div>
+                <div class="arbitrage-list">
+            `;
+            
+            for (const result of topResults) {
+                const isPositive = result.profit >= 0;
+                const profitText = isPositive ? `+${formatPrice(result.profit)}` : formatPrice(result.profit);
+                
+                let exchangesHtml = '';
+                for (const ex of result.exchanges) {
+                    if (ex.hasData) {
+                        const isBest = (ex.id === result.buyEx.id || ex.id === result.sellEx.id);
+                        const style = isBest ? 'font-weight: 700;' : '';
+                        exchangesHtml += `
+                            <div class="exchange-row">
+                                <span class="exchange-name" style="${style}">${ex.name}:</span>
+                                <span class="exchange-prices" style="${style}">
+                                    Покупка ${formatPrice(ex.data.ask)} | Продажа ${formatPrice(ex.data.bid)}
+                                </span>
+                            </div>
+                        `;
+                    } else {
+                        exchangesHtml += `
+                            <div class="exchange-row" style="opacity: 0.5;">
+                                <span class="exchange-name">${ex.name}:</span>
+                                <span class="exchange-prices" style="color: var(--hint-color); font-style: italic;">
+                                    ⏳ Ожидание данных...
+                                </span>
+                            </div>
+                        `;
+                    }
+                }
+                
+                html += `
+                    <div class="arbitrage-card ${isPositive ? 'positive' : 'negative'}">
+                        <div class="card-header">
+                            <span class="coin-symbol">${result.coin.replace('USDT', '/USDT')}</span>
+                            <span class="profit-badge ${isPositive ? 'positive' : 'negative'}">${profitText} USDT</span>
+                        </div>
+                        <div class="exchanges-grid">${exchangesHtml}</div>
+                        <div class="scenario ${isPositive ? '' : 'negative-scenario'}">
+                            ${isPositive ? '🚀' : '💡'} <strong>${result.scenario.buyExchange}</strong> → <strong>${result.scenario.sellExchange}</strong>
+                        </div>
+                        
+                        <div style="margin-top: 10px; padding: 10px; background: rgba(128, 128, 128, 0.05); border-radius: 8px; font-size: 12px; color: var(--hint-color);">
+                            <div style="margin-bottom: 4px;"><strong>📋 Детали расчета (на 100 USDT):</strong></div>
+                            <div style="margin-bottom: 2px;">🛒 Покупка на ${result.scenario.buyExchange}: ${formatPrice(result.buyPrice)} USDT</div>
+                            <div style="margin-bottom: 2px;">💸 Продажа на ${result.scenario.sellExchange}: ${formatPrice(result.sellPrice)} USDT</div>
+                            <div style="margin-bottom: 2px;">💳 Комиссии: ${(result.buyEx.fee * 100).toFixed(2)}% + ${(result.sellEx.fee * 100).toFixed(2)}%</div>
+                            <div style="color: ${isPositive ? 'var(--positive-color)' : 'var(--negative-color)'}; font-weight: 600;">💰 Чистая прибыль: ${profitText} USDT</div>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            html += '</div>';
+            contentDiv.innerHTML = html;
+        }
+
+        refreshBtn.onclick = () => {
+            console.log('🔄 Обновление данных...');
+            fetchPrices();
+        };
+
+        function startAutoUpdate() {
+            if (updateTimer) clearInterval(updateTimer);
+            updateTimer = setInterval(fetchPrices, UPDATE_INTERVAL);
+        }
+
+        console.log('🚀 Web App запущен (Python CCXT режим)');
+        fetchPrices();
+        startAutoUpdate();
+    </script>
+</body>
+</html>
+
