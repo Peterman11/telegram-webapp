@@ -137,11 +137,12 @@
             height: 48px;
             border-radius: 50%;
             overflow: hidden;
-            background: rgba(255, 255, 255, 0.08);
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.25), rgba(139, 92, 246, 0.25));
             flex-shrink: 0;
             display: flex;
             align-items: center;
             justify-content: center;
+            border: 2px solid rgba(59, 130, 246, 0.3);
         }
         .coin-icon-wrap img {
             width: 100%;
@@ -154,9 +155,13 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 18px;
+            font-size: 20px;
             font-weight: 700;
-            color: var(--hint-color);
+            background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
         }
         .coin-symbol { font-size: 18px; font-weight: 600; }
         .profit-badge {
@@ -295,17 +300,20 @@
             phemex: 'Phemex',
         };
 
-        const COIN_ICON_BASE = 'https://cdn.jsdelivr.net/npm/cryptocurrency-icons@0.18.1/128/color';
+        // Маппинг символов для специальных случаев
         const COIN_ICON_ALIAS = {
             '1000pepe': 'pepe', '1000pep': 'pepe',
-            'pol': 'matic', 'w': 'generic',
+            'pol': 'matic',
+            'w': 'wormhole',
         };
 
+        // Пробуем загрузить иконку из CDN, если не работает — показываем fallback
         function getCoinIconUrl(coin) {
             const raw = (coin || '').replace(/\/USDT$/i, '').trim();
             const key = raw.toLowerCase();
             const symbol = COIN_ICON_ALIAS[key] || key;
-            return `${COIN_ICON_BASE}/${symbol}.png`;
+            // Используем CryptoCompare API - самый стабильный и бесплатный
+            return `https://www.cryptocompare.com/media/37746251/${symbol}.png`;
         }
 
         function getCoinFallbackLetter(coin) {
@@ -582,8 +590,7 @@
                         <div class="card-header">
                             <div class="card-header-left">
                                 <div class="coin-icon-wrap">
-                                    <img src="${coinIconUrl}" alt="" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
-                                    <span class="coin-fallback" style="display:none;">${coinLetter}</span>
+                                    <span class="coin-fallback">${coinLetter}</span>
                                 </div>
                                 <span class="coin-symbol">${result.coin.replace('USDT', '/USDT')}</span>
                             </div>
