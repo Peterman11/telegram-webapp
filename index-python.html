@@ -305,19 +305,19 @@
             phemex: 'Phemex',
         };
 
-        // Символ → id для CoinCap (assets.coincap.io). Если нет — пробуем symbol как есть.
+        // jsDelivr + cryptocurrency-icons (500+ монет). Нет в наборе — показываем букву (onerror).
         const COIN_ICON_ALIAS = {
             '1000pepe': 'pepe', '1000pep': 'pepe',
             'pol': 'matic', 'matic': 'matic',
-            'w': 'wld', 'wld': 'wld',
-            'trump': 'trump',
+            'w': 'wbtc', 'wld': 'generic',
         };
+        const COIN_ICON_BASE = 'https://cdn.jsdelivr.net/npm/cryptocurrency-icons@0.18.1/128';
 
         function getCoinIconUrl(coin) {
             const raw = (coin || '').replace(/\/USDT$/i, '').trim();
             const key = raw.toLowerCase();
             const symbol = COIN_ICON_ALIAS[key] || key;
-            return `https://assets.coincap.io/assets/icons/${symbol}@2x.png`;
+            return `${COIN_ICON_BASE}/${symbol}.png`;
         }
 
         function getCoinFallbackLetter(coin) {
