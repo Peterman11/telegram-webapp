@@ -329,12 +329,14 @@
 
         const COIN_ICON_CDN = 'https://cdn.jsdelivr.net/npm/cryptocurrency-icons@0.18.1/128/color';
         const COIN_ICON_ALIAS = { '1000pepe': 'pepe', '1000pep': 'pepe', 'pol': 'matic', 'w': 'wbtc' };
+        const LOCAL_ICONS = ['btc','eth','bnb','xrp','sol','trx','doge','ada','bch','xmr','link','xlm','ltc','dot','uni','avax','atom','etc','fil','matic','icp','snx','comp','crv','bat','zec','mkr','enj','yfi','eos','neo'];
 
         function getCoinIconUrl(coin) {
             const raw = (coin || '').replace(/\/USDT$/i, '').trim();
             const key = raw.toLowerCase();
             const symbol = COIN_ICON_ALIAS[key] || key;
-            return `${COIN_ICON_CDN}/${symbol}.png`;
+            if (LOCAL_ICONS.indexOf(symbol) >= 0) return 'icons/' + symbol + '.png';
+            return COIN_ICON_CDN + '/' + symbol + '.png';
         }
 
         function getCoinFallbackIconUrl(coin) {
