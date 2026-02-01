@@ -7,15 +7,16 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         :root {
-            --bg-color: var(--tg-theme-bg-color, #ffffff);
-            --text-color: var(--tg-theme-text-color, #000000);
-            --hint-color: var(--tg-theme-hint-color, #999999);
-            --button-color: var(--tg-theme-button-color, #3390ec);
-            --button-text-color: var(--tg-theme-button-text-color, #ffffff);
-            --secondary-bg: var(--tg-theme-secondary-bg-color, #f0f0f0);
-            --positive-color: #4caf50;
-            --negative-color: #ff4444;
-            --warning-color: #ff9800;
+            --bg-color: #0a0e17;
+            --bg-card: rgba(18, 25, 42, 0.85);
+            --text-color: #e8ecf4;
+            --hint-color: #8b9dc3;
+            --button-color: #3b82f6;
+            --button-text-color: #ffffff;
+            --border-gradient: linear-gradient(135deg, rgba(59, 130, 246, 0.4), rgba(139, 92, 246, 0.2));
+            --positive-color: #22c55e;
+            --negative-color: #ef4444;
+            --warning-color: #f59e0b;
         }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -24,9 +25,31 @@
             padding: 16px;
             min-height: 100vh;
             margin: 0;
+            position: relative;
+            overflow-x: hidden;
         }
-        .container { max-width: 600px; margin: 0 auto; }
-        h1 { font-size: 22px; margin-bottom: 16px; text-align: center; }
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: 
+                radial-gradient(ellipse 80% 50% at 50% -20%, rgba(59, 130, 246, 0.15), transparent),
+                radial-gradient(ellipse 60% 40% at 80% 50%, rgba(139, 92, 246, 0.08), transparent),
+                radial-gradient(circle at 20% 80%, rgba(34, 197, 94, 0.06), transparent);
+            pointer-events: none;
+            z-index: 0;
+        }
+        .container { max-width: 600px; margin: 0 auto; position: relative; z-index: 1; }
+        h1 {
+            font-size: 22px;
+            margin-bottom: 12px;
+            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        h1 .title-icon { font-size: 24px; }
         .status-bar {
             text-align: center;
             padding: 10px 16px;
@@ -45,58 +68,6 @@
             font-size: 14px;
             line-height: 1.6;
         }
-        .arbitrage-list { display: flex; flex-direction: column; gap: 12px; }
-        .arbitrage-card {
-            background: var(--secondary-bg);
-            border-radius: 12px;
-            padding: 14px 16px;
-            border-left: 4px solid var(--button-color);
-        }
-        .arbitrage-card.positive { border-left-color: var(--positive-color); }
-        .arbitrage-card.negative { border-left-color: var(--negative-color); }
-        .card-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 10px;
-        }
-        .coin-symbol { font-size: 17px; font-weight: 600; }
-        .profit-badge {
-            font-size: 16px;
-            font-weight: 700;
-            padding: 6px 12px;
-            border-radius: 8px;
-            color: white;
-        }
-        .profit-badge.positive { background: var(--positive-color); }
-        .profit-badge.negative { background: var(--negative-color); }
-        .exchanges-grid { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
-        .exchange-row { display: flex; justify-content: space-between; align-items: center; }
-        .exchange-name { color: var(--hint-color); }
-        .exchange-prices { font-weight: 500; }
-        .scenario {
-            margin-top: 10px;
-            padding: 10px 12px;
-            background: linear-gradient(135deg, rgba(76, 175, 80, 0.15), rgba(76, 175, 80, 0.05));
-            border-radius: 8px;
-            border-left: 3px solid var(--positive-color);
-            font-size: 14px;
-            font-weight: 600;
-            color: var(--positive-color);
-        }
-        .scenario.negative-scenario {
-            background: linear-gradient(135deg, rgba(255, 68, 68, 0.15), rgba(255, 68, 68, 0.05));
-            border-left-color: var(--negative-color);
-            color: var(--negative-color);
-        }
-        .summary {
-            text-align: center;
-            padding: 10px;
-            margin-bottom: 12px;
-            font-size: 14px;
-            font-weight: 500;
-            color: var(--hint-color);
-        }
         .refresh-btn {
             width: 100%;
             padding: 12px;
@@ -108,12 +79,128 @@
             font-size: 14px;
             font-weight: 500;
             cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
         }
+        .summary {
+            text-align: center;
+            padding: 10px;
+            margin-bottom: 12px;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--hint-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+        .arbitrage-list { display: flex; flex-direction: column; gap: 14px; }
+        .arbitrage-card {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 16px 18px;
+            border: 1px solid transparent;
+            background-clip: padding-box;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+            position: relative;
+        }
+        .arbitrage-card::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 16px;
+            padding: 1px;
+            background: var(--border-gradient);
+            -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+            -webkit-mask-composite: xor;
+            mask-composite: exclude;
+            pointer-events: none;
+        }
+        .arbitrage-card.positive { --accent: var(--positive-color); }
+        .arbitrage-card.negative { --accent: var(--negative-color); }
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+        .card-header-left {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .coin-icon-wrap {
+            width: 48px;
+            height: 48px;
+            border-radius: 50%;
+            overflow: hidden;
+            background: rgba(255, 255, 255, 0.08);
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .coin-icon-wrap img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .coin-icon-wrap .coin-fallback {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 18px;
+            font-weight: 700;
+            color: var(--hint-color);
+        }
+        .coin-symbol { font-size: 18px; font-weight: 600; }
+        .profit-badge {
+            font-size: 15px;
+            font-weight: 700;
+            padding: 6px 12px;
+            border-radius: 10px;
+            color: white;
+        }
+        .profit-badge.positive { background: var(--positive-color); }
+        .profit-badge.negative { background: var(--negative-color); }
+        .exchanges-grid { display: flex; flex-direction: column; gap: 6px; font-size: 13px; }
+        .exchange-row { display: flex; justify-content: space-between; align-items: center; }
+        .exchange-name { color: var(--hint-color); }
+        .exchange-prices { font-weight: 500; }
+        .scenario {
+            margin-top: 10px;
+            padding: 10px 12px;
+            background: linear-gradient(135deg, rgba(34, 197, 94, 0.12), rgba(34, 197, 94, 0.04));
+            border-radius: 8px;
+            border-left: 3px solid var(--positive-color);
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--positive-color);
+        }
+        .scenario.negative-scenario {
+            background: linear-gradient(135deg, rgba(239, 68, 68, 0.12), rgba(239, 68, 68, 0.04));
+            border-left-color: var(--negative-color);
+            color: var(--negative-color);
+        }
+        .detail-block {
+            margin-top: 12px;
+            padding: 12px;
+            background: rgba(255, 255, 255, 0.04);
+            border-radius: 10px;
+            font-size: 12px;
+            color: var(--hint-color);
+        }
+        .detail-block strong { color: var(--text-color); }
         .recommendation {
             margin-top: 12px;
             padding: 12px;
-            background: rgba(128, 128, 128, 0.1);
-            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.04);
+            border-radius: 10px;
         }
         .recommendation-title { font-size: 13px; font-weight: 600; margin-bottom: 10px; }
         .efficiency { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
@@ -127,7 +214,7 @@
             justify-content: space-between;
             align-items: center;
             padding: 6px 8px;
-            background: rgba(128, 128, 128, 0.1);
+            background: rgba(255, 255, 255, 0.05);
             border-radius: 6px;
             font-size: 12px;
         }
@@ -139,9 +226,9 @@
 </head>
 <body>
     <div class="container">
-        <h1>📈 Арбитраж криптовалют</h1>
+        <h1><span class="title-icon">⚡</span> Арбитраж криптовалют</h1>
         <div id="statusBar" class="status-bar disconnected">⏳ Подключение к Python сервису...</div>
-        <button id="refreshBtn" class="refresh-btn">🔄 Обновить данные</button>
+        <button id="refreshBtn" class="refresh-btn"><span>🔄</span> Обновить данные</button>
         <div id="content" class="arbitrage-list">
             <div class="loading">⏳ Загрузка данных...</div>
         </div>
@@ -166,8 +253,20 @@
             gateio: 0.002,
             bitstamp: 0.005,
             gemini: 0.004,
-            mexc: 0.001,
             cryptocom: 0.001,
+            bitmart: 0.0025,
+            coinex: 0.002,
+            digifinex: 0.002,
+            ascendex: 0.001,
+            bitrue: 0.00098,
+            hitbtc: 0.0009,
+            whitebit: 0.001,
+            bitvavo: 0.0025,
+            exmo: 0.002,
+            cex: 0.0025,
+            fmfwio: 0.002,
+            lbank: 0.001,
+            phemex: 0.001,
         };
 
         const EXCHANGE_NAMES = {
@@ -180,9 +279,39 @@
             gateio: 'Gate.io',
             bitstamp: 'Bitstamp',
             gemini: 'Gemini',
-            mexc: 'MEXC',
             cryptocom: 'Crypto.com',
+            bitmart: 'BitMart',
+            coinex: 'CoinEx',
+            digifinex: 'DigiFinex',
+            ascendex: 'AscendEX',
+            bitrue: 'Bitrue',
+            hitbtc: 'HitBTC',
+            whitebit: 'WhiteBIT',
+            bitvavo: 'Bitvavo',
+            exmo: 'EXMO',
+            cex: 'CEX.IO',
+            fmfwio: 'FMFW.io',
+            lbank: 'LBank',
+            phemex: 'Phemex',
         };
+
+        const COIN_ICON_BASE = 'https://cdn.jsdelivr.net/npm/cryptocurrency-icons@0.18.1/128/color';
+        const COIN_ICON_ALIAS = {
+            '1000pepe': 'pepe', '1000pep': 'pepe',
+            'pol': 'matic', 'w': 'generic',
+        };
+
+        function getCoinIconUrl(coin) {
+            const raw = (coin || '').replace(/\/USDT$/i, '').trim();
+            const key = raw.toLowerCase();
+            const symbol = COIN_ICON_ALIAS[key] || key;
+            return `${COIN_ICON_BASE}/${symbol}.png`;
+        }
+
+        function getCoinFallbackLetter(coin) {
+            const raw = (coin || '').replace(/\/USDT$/i, '').trim();
+            return (raw.charAt(0) || '?').toUpperCase();
+        }
 
         const contentDiv = document.getElementById('content');
         const statusBar = document.getElementById('statusBar');
@@ -408,22 +537,20 @@
             const shownCoins = topResults.length;
             const skippedCount = skipped.length;
             
-            let summaryText = `🏆 Показано ${shownCoins} из ${totalCoins} монет`;
-            if (positiveCount > 0) {
-                summaryText += ` | ${positiveCount} с прибылью`;
-            }
-            if (skippedCount > 0) {
-                summaryText += ` | ${skippedCount} пропущено (недостаточно данных)`;
-            }
+            let summaryText = `Показано ${shownCoins} из ${totalCoins} монет`;
+            if (positiveCount > 0) summaryText += ` | ${positiveCount} с прибылью`;
+            if (skippedCount > 0) summaryText += ` | ${skippedCount} пропущено`;
             
             let html = `
-                <div class="summary">${summaryText}</div>
+                <div class="summary">🏆 ${summaryText}</div>
                 <div class="arbitrage-list">
             `;
             
             for (const result of topResults) {
                 const isPositive = result.profit >= 0;
                 const profitText = isPositive ? `+${formatPrice(result.profit)}` : formatPrice(result.profit);
+                const coinIconUrl = getCoinIconUrl(result.coin);
+                const coinLetter = getCoinFallbackLetter(result.coin);
                 
                 let exchangesHtml = '';
                 for (const ex of result.exchanges) {
@@ -434,7 +561,7 @@
                             <div class="exchange-row">
                                 <span class="exchange-name" style="${style}">${ex.name}:</span>
                                 <span class="exchange-prices" style="${style}">
-                                    Покупка ${formatPrice(ex.data.ask)} | Продажа ${formatPrice(ex.data.bid)}
+                                    Покупка ${formatPrice(ex.data.ask)} / Продажа ${formatPrice(ex.data.bid)}
                                 </span>
                             </div>
                         `;
@@ -453,16 +580,22 @@
                 html += `
                     <div class="arbitrage-card ${isPositive ? 'positive' : 'negative'}">
                         <div class="card-header">
-                            <span class="coin-symbol">${result.coin.replace('USDT', '/USDT')}</span>
+                            <div class="card-header-left">
+                                <div class="coin-icon-wrap">
+                                    <img src="${coinIconUrl}" alt="" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                                    <span class="coin-fallback" style="display:none;">${coinLetter}</span>
+                                </div>
+                                <span class="coin-symbol">${result.coin.replace('USDT', '/USDT')}</span>
+                            </div>
                             <span class="profit-badge ${isPositive ? 'positive' : 'negative'}">${profitText} USDT</span>
                         </div>
                         <div class="exchanges-grid">${exchangesHtml}</div>
                         <div class="scenario ${isPositive ? '' : 'negative-scenario'}">
-                            ${isPositive ? '🚀' : '💡'} <strong>${result.scenario.buyExchange}</strong> → <strong>${result.scenario.sellExchange}</strong>
+                            ${isPositive ? '🚀' : '→'} <strong>${result.scenario.buyExchange}</strong> → <strong>${result.scenario.sellExchange}</strong>
                         </div>
                         
-                        <div style="margin-top: 10px; padding: 10px; background: rgba(128, 128, 128, 0.05); border-radius: 8px; font-size: 12px; color: var(--hint-color);">
-                            <div style="margin-bottom: 4px;"><strong>📋 Детали расчета (на 100 USDT):</strong></div>
+                        <div class="detail-block">
+                            <div style="margin-bottom: 6px;"><strong>📋 Детали расчета (на 100 USDT):</strong></div>
                             <div style="margin-bottom: 2px;">🛒 Покупка на ${result.scenario.buyExchange}: ${formatPrice(result.buyPrice)} USDT</div>
                             <div style="margin-bottom: 2px;">💸 Продажа на ${result.scenario.sellExchange}: ${formatPrice(result.sellPrice)} USDT</div>
                             <div style="margin-bottom: 2px;">💳 Комиссии: ${(result.buyEx.fee * 100).toFixed(2)}% + ${(result.sellEx.fee * 100).toFixed(2)}%</div>
@@ -476,7 +609,7 @@
                                 <div class="efficiency-label">Эффективность (ROI)</div>
                             </div>
                             ${result.recommendations.isProfitable && result.recommendations.optimalAmount > 0 ? `
-                                <div style="margin-top: 10px; padding: 10px; background: rgba(76, 175, 80, 0.1); border-radius: 8px;">
+                                <div style="margin-top: 10px; padding: 10px; background: rgba(34, 197, 94, 0.1); border-radius: 8px;">
                                     <div style="font-size: 14px; font-weight: 600; color: var(--positive-color); margin-bottom: 6px;">⭐ Рекомендуемая сумма: <strong>${result.recommendations.optimalAmount} USDT</strong></div>
                                     <div style="font-size: 12px; color: var(--hint-color);">💰 Прибыль: ~${formatPrice(result.recommendations.maxProfit || 0)} USDT · Ликвидность до ${Math.round(result.recommendations.liquidity / 1000)}k USDT</div>
                                 </div>
@@ -488,7 +621,7 @@
                                     const isOptimal = amount === result.recommendations.optimalAmount;
                                     const profitClass = rec.profit >= 0 ? 'positive' : 'negative';
                                     const profitSign = rec.profit >= 0 ? '+' : '';
-                                    const slippageText = rec.slippage > 0.01 ? ` (проседание: ${rec.slippage.toFixed(3)}%)` : '';
+                                    const slippageText = rec.slippage > 0.01 ? ` (Проседание. ${rec.slippage.toFixed(3)}%)` : '';
                                     return `<div class="rec-item"><span class="rec-amount">${amount} USDT${isOptimal ? '<span class="optimal-badge">⭐ Оптимально</span>' : ''}</span><span class="rec-profit ${profitClass}">${profitSign}${formatPrice(rec.profit)} USDT${slippageText}</span></div>`;
                                 }).join('')}
                             </div>
@@ -518,3 +651,4 @@
     </script>
 </body>
 </html>
+
