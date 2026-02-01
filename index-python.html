@@ -23,7 +23,7 @@
         }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: var(--bg-color);
+            background: linear-gradient(160deg, #0a0e17 0%, #0f172a 35%, #1e1b4b 70%, #0f172a 100%);
             color: var(--text-color);
             padding: 16px;
             min-height: 100vh;
@@ -36,9 +36,10 @@
             position: fixed;
             top: 0; left: 0; right: 0; bottom: 0;
             background: 
-                radial-gradient(ellipse 80% 50% at 50% -20%, rgba(59, 130, 246, 0.15), transparent),
-                radial-gradient(ellipse 60% 40% at 80% 50%, rgba(139, 92, 246, 0.08), transparent),
-                radial-gradient(circle at 20% 80%, rgba(34, 197, 94, 0.06), transparent);
+                radial-gradient(ellipse 100% 80% at 50% -30%, rgba(59, 130, 246, 0.35), transparent 50%),
+                radial-gradient(ellipse 80% 60% at 90% 20%, rgba(139, 92, 246, 0.25), transparent 45%),
+                radial-gradient(ellipse 70% 50% at 10% 60%, rgba(99, 102, 241, 0.2), transparent 45%),
+                radial-gradient(circle at 50% 100%, rgba(34, 197, 94, 0.08), transparent 40%);
             pointer-events: none;
             z-index: 0;
         }
@@ -101,12 +102,13 @@
         }
         .arbitrage-list { display: flex; flex-direction: column; gap: 14px; }
         .arbitrage-card {
-            background: var(--bg-card);
+            background: linear-gradient(145deg, rgba(18, 25, 42, 0.92), rgba(30, 27, 75, 0.6));
+            backdrop-filter: blur(8px);
             border-radius: 16px;
             padding: 16px 18px;
             border: 1px solid transparent;
             background-clip: padding-box;
-            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(255,255,255,0.04);
             position: relative;
         }
         .arbitrage-card::before {
@@ -114,8 +116,8 @@
             position: absolute;
             inset: 0;
             border-radius: 16px;
-            padding: 1px;
-            background: var(--border-gradient);
+            padding: 2px;
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.6), rgba(139, 92, 246, 0.4), rgba(59, 130, 246, 0.3));
             -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
             mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
             -webkit-mask-composite: xor;
@@ -303,20 +305,19 @@
             phemex: 'Phemex',
         };
 
-        // Маппинг символов для специальных случаев
+        // Символ → id для CoinCap (assets.coincap.io). Если нет — пробуем symbol как есть.
         const COIN_ICON_ALIAS = {
             '1000pepe': 'pepe', '1000pep': 'pepe',
-            'pol': 'matic',
-            'w': 'wormhole',
+            'pol': 'matic', 'matic': 'matic',
+            'w': 'wld', 'wld': 'wld',
+            'trump': 'trump',
         };
 
-        // Пробуем загрузить иконку из CDN, если не работает — показываем fallback
         function getCoinIconUrl(coin) {
             const raw = (coin || '').replace(/\/USDT$/i, '').trim();
             const key = raw.toLowerCase();
             const symbol = COIN_ICON_ALIAS[key] || key;
-            // Используем CryptoCompare API - самый стабильный и бесплатный
-            return `https://www.cryptocompare.com/media/37746251/${symbol}.png`;
+            return `https://assets.coincap.io/assets/icons/${symbol}@2x.png`;
         }
 
         function getCoinFallbackLetter(coin) {
@@ -593,7 +594,8 @@
                         <div class="card-header">
                             <div class="card-header-left">
                                 <div class="coin-icon-wrap">
-                                    <span class="coin-fallback">${coinLetter}</span>
+                                    <img src="${coinIconUrl}" alt="" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';">
+                                    <span class="coin-fallback" style="display:none;">${coinLetter}</span>
                                 </div>
                                 <span class="coin-symbol">${result.coin.replace('USDT', '/USDT')}</span>
                             </div>
