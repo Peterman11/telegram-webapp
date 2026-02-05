@@ -256,21 +256,10 @@
             kucoin: 0.001,
             bitget: 0.001,
             huobi: 0.002,
-            bitfinex: 0.002,
             bingx: 0.001,
-            gateio: 0.002,
-            bitstamp: 0.005,
-            gemini: 0.004,
             cryptocom: 0.001,
-            bitmart: 0.0025,
-            digifinex: 0.002,
             ascendex: 0.001,
             bitrue: 0.00098,
-            hitbtc: 0.0009,
-            whitebit: 0.001,
-            exmo: 0.002,
-            cex: 0.0025,
-            fmfwio: 0.002,
             phemex: 0.001,
         };
 
@@ -279,23 +268,14 @@
             kucoin: 'KuCoin',
             bitget: 'Bitget',
             huobi: 'Huobi',
-            bitfinex: 'Bitfinex',
             bingx: 'BingX',
-            gateio: 'Gate.io',
-            bitstamp: 'Bitstamp',
-            gemini: 'Gemini',
             cryptocom: 'Crypto.com',
-            bitmart: 'BitMart',
-            digifinex: 'DigiFinex',
             ascendex: 'AscendEX',
             bitrue: 'Bitrue',
-            hitbtc: 'HitBTC',
-            whitebit: 'WhiteBIT',
-            exmo: 'EXMO',
-            cex: 'CEX.IO',
-            fmfwio: 'FMFW.io',
             phemex: 'Phemex',
         };
+
+        const TOTAL_EXCHANGES = 9; // всего бирж в аналитике (должно совпадать с FEES)
 
         // Цвет для каждой монеты (бренд-цвета)
         const COIN_COLORS = {
@@ -460,7 +440,7 @@
                         Object.keys(exchanges).forEach(ex => exchangeCount.add(ex));
                     });
                     
-                    updateStatus(true, exchangeCount.size, Object.keys(FEES).length);
+                    updateStatus(true, exchangeCount.size, TOTAL_EXCHANGES);
                     renderArbitrage(result.data);
                 } else {
                     throw new Error(result.error || 'No data');
@@ -567,11 +547,10 @@
             }
             
             const positiveCount = topResults.filter(r => r.profit >= 0).length;
-            const totalCoins = Object.keys(data).length;
             const shownCoins = topResults.length;
             const skippedCount = skipped.length;
             
-            let summaryText = `Показано ${shownCoins} из ${totalCoins} монет`;
+            let summaryText = `Показано ${shownCoins} монет | ${TOTAL_EXCHANGES} бирж`;
             if (positiveCount > 0) summaryText += ` | ${positiveCount} с прибылью`;
             if (skippedCount > 0) summaryText += ` | ${skippedCount} пропущено`;
             
