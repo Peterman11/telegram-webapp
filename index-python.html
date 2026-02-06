@@ -210,6 +210,41 @@
         .trading-btns { display: flex; gap: 8px; margin-bottom: 10px; }
         .btn-trade-start { background: var(--green); color: white; }
         .btn-trade-stop { background: var(--red); color: white; }
+        .btn-save-settings { background: var(--purple); color: white; }
+
+        /* Trading settings form */
+        .trading-settings { margin-bottom: 12px; }
+        .trading-settings .settings-row { display: flex; gap: 10px; margin-bottom: 8px; align-items: center; }
+        .trading-settings .settings-row label { font-size: 12px; color: var(--hint); white-space: nowrap; min-width: 120px; }
+        .trading-settings .settings-row input, .trading-settings .settings-row select {
+            flex: 1; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px; padding: 8px 10px; color: var(--text); font-size: 13px;
+            outline: none;
+        }
+        .trading-settings .settings-row input:focus, .trading-settings .settings-row select:focus { border-color: var(--purple); }
+        .trading-settings .settings-row select { appearance: none; cursor: pointer; }
+
+        /* Exchange chips */
+        .exchange-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+        .exchange-chip {
+            display: inline-flex; align-items: center; gap: 4px;
+            padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600;
+        }
+        .exchange-chip.active { background: rgba(34,197,94,0.15); color: var(--green); border: 1px solid rgba(34,197,94,0.3); }
+        .exchange-chip.inactive { background: rgba(255,255,255,0.04); color: var(--hint); border: 1px solid rgba(255,255,255,0.08); }
+        .exchange-chip .chip-dot {
+            width: 6px; height: 6px; border-radius: 50%;
+        }
+        .exchange-chip.active .chip-dot { background: var(--green); }
+        .exchange-chip.inactive .chip-dot { background: var(--hint); }
+
+        /* Save feedback */
+        .save-feedback {
+            font-size: 11px; padding: 6px 10px; border-radius: 6px; text-align: center;
+            margin-bottom: 8px; display: none;
+        }
+        .save-feedback.success { display: block; background: rgba(34,197,94,0.15); color: var(--green); }
+        .save-feedback.error { display: block; background: rgba(239,68,68,0.15); color: var(--red); }
 
         /* Trade history */
         .trade-log { max-height: 250px; overflow-y: auto; }
@@ -257,10 +292,44 @@
                 <div class="trading-title">🤖 Автоторговля</div>
                 <span class="trading-status-badge stopped" id="tradingBadge">Остановлена</span>
             </div>
-            <div class="trading-info" id="tradingInfo">
-                Загрузка статуса...
+
+            <!-- Биржи с API ключами -->
+            <div style="font-size:12px;color:var(--hint);margin-bottom:6px;">Биржи для торговли:</div>
+            <div class="exchange-chips" id="exchangeChips">
+                <div style="font-size:11px;color:var(--hint);">Загрузка...</div>
             </div>
+
+            <!-- Настройки торговли (редактируемые) -->
+            <div class="trading-settings" id="tradingSettingsForm">
+                <div class="settings-row">
+                    <label>Мин. спред %</label>
+                    <input type="number" id="tMinSpread" value="0.5" step="0.1" min="0">
+                </div>
+                <div class="settings-row">
+                    <label>Мин. прибыль $</label>
+                    <input type="number" id="tMinProfit" value="0.1" step="0.01" min="0">
+                </div>
+                <div class="settings-row">
+                    <label>Сумма (USDT)</label>
+                    <input type="number" id="tAmountUsdt" value="100" step="10" min="1">
+                </div>
+                <div class="settings-row">
+                    <label>Интервал (сек)</label>
+                    <input type="number" id="tIntervalSec" value="10" step="1" min="1">
+                </div>
+                <div class="settings-row">
+                    <label>Режим</label>
+                    <select id="tDryRun">
+                        <option value="true">🧪 DRY RUN (без реальных сделок)</option>
+                        <option value="false">⚡ LIVE (реальные сделки)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div id="saveFeedback" class="save-feedback"></div>
+
             <div class="trading-btns">
+                <button class="btn btn-save-settings" id="saveSettingsBtn" onclick="saveSettings()">💾 Сохранить</button>
                 <button class="btn btn-trade-start" id="startTradingBtn" onclick="startTrading()">▶ Запустить</button>
                 <button class="btn btn-trade-stop" id="stopTradingBtn" onclick="stopTrading()" disabled>⏹ Остановить</button>
             </div>
@@ -499,10 +568,27 @@
 
         // === AUTO-TRADING ===
         const tradingBadge = document.getElementById('tradingBadge');
-        const tradingInfo = document.getElementById('tradingInfo');
         const startTradingBtn = document.getElementById('startTradingBtn');
         const stopTradingBtn = document.getElementById('stopTradingBtn');
         const tradeLog = document.getElementById('tradeLog');
+        const exchangeChips = document.getElementById('exchangeChips');
+        const saveFeedback = document.getElementById('saveFeedback');
+
+        // Trading settings inputs
+        const tMinSpread = document.getElementById('tMinSpread');
+        const tMinProfit = document.getElementById('tMinProfit');
+        const tAmountUsdt = document.getElementById('tAmountUsdt');
+        const tIntervalSec = document.getElementById('tIntervalSec');
+        const tDryRun = document.getElementById('tDryRun');
+
+        // EXCHANGE_DISPLAY_NAMES for chip rendering
+        const ALL_EXCHANGE_NAMES = {
+            'okx': 'OKX', 'binance': 'Binance', 'bybit': 'Bybit', 'kucoin': 'KuCoin',
+            'kraken': 'Kraken', 'coinbase': 'Coinbase', 'huobi': 'Huobi', 'poloniex': 'Poloniex',
+            'bingx': 'BingX'
+        };
+
+        let tradingSettingsLoaded = false;
 
         async function fetchTradingStatus() {
             try {
@@ -513,19 +599,35 @@
                 const s = data.settings;
                 const running = data.running;
                 const dry = data.dryRun;
-                const keys = data.configuredExchanges || [];
+                const configuredExchanges = data.configuredExchanges || [];
+                const configuredNames = data.configuredExchangeNames || {};
 
                 tradingBadge.className = 'trading-status-badge ' + (running ? (dry ? 'dry' : 'running') : 'stopped');
-                tradingBadge.textContent = running ? (dry ? 'DRY RUN' : 'Активна') : 'Остановлена';
+                tradingBadge.textContent = running ? (dry ? '🧪 DRY RUN' : '⚡ LIVE') : 'Остановлена';
 
                 startTradingBtn.disabled = running;
                 stopTradingBtn.disabled = !running;
 
-                tradingInfo.innerHTML = `
-                    <div>Мин. спред: <strong>${s.minSpread}%</strong> · Мин. прибыль: <strong>${s.minProfit} USDT</strong> · Сумма: <strong>${s.amountUsdt} USDT</strong></div>
-                    <div>Интервал: <strong>${s.intervalSec}с</strong> · Режим: <strong>${dry ? '🧪 DRY RUN (без реальных сделок)' : '⚡ LIVE'}</strong></div>
-                    <div>API ключи: <strong>${keys.length > 0 ? keys.join(', ') : 'не настроены'}</strong></div>
-                `;
+                // Заполняем настройки из сервера только при первой загрузке
+                if (!tradingSettingsLoaded) {
+                    tMinSpread.value = s.minSpread;
+                    tMinProfit.value = s.minProfit;
+                    tAmountUsdt.value = s.amountUsdt;
+                    tIntervalSec.value = s.intervalSec;
+                    tDryRun.value = s.dryRun ? 'true' : 'false';
+                    tradingSettingsLoaded = true;
+                }
+
+                // Рендерим биржи (зелёные — с API ключами, серые — без)
+                let chipsHtml = '';
+                for (const [exId, exName] of Object.entries(ALL_EXCHANGE_NAMES)) {
+                    const isActive = configuredExchanges.includes(exId);
+                    const displayName = isActive ? (configuredNames[exId] || exName) : exName;
+                    const cls = isActive ? 'active' : 'inactive';
+                    const label = isActive ? 'API ✓' : 'нет ключа';
+                    chipsHtml += `<span class="exchange-chip ${cls}"><span class="chip-dot"></span>${displayName} <span style="font-size:9px;opacity:0.7;">(${label})</span></span>`;
+                }
+                exchangeChips.innerHTML = chipsHtml;
 
                 // Render trade history
                 const trades = data.trades || [];
@@ -555,12 +657,53 @@
                     tradeLog.innerHTML = html;
                 }
             } catch (e) {
-                tradingInfo.textContent = 'Ошибка загрузки статуса';
+                console.error('Trading status error:', e);
+            }
+        }
+
+        async function saveSettings() {
+            const payload = {
+                minSpread: parseFloat(tMinSpread.value) || 0.5,
+                minProfit: parseFloat(tMinProfit.value) || 0.1,
+                amountUsdt: parseFloat(tAmountUsdt.value) || 100,
+                intervalSec: parseInt(tIntervalSec.value) || 10,
+                dryRun: tDryRun.value === 'true',
+            };
+            try {
+                const res = await fetch(`${API_URL}/api/trading/settings`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+                const data = await res.json();
+                if (data.success) {
+                    saveFeedback.className = 'save-feedback success';
+                    saveFeedback.textContent = '✅ Настройки сохранены';
+                    setTimeout(() => { saveFeedback.className = 'save-feedback'; saveFeedback.textContent = ''; }, 3000);
+                    // Обновляем поля из ответа
+                    if (data.settings) {
+                        tMinSpread.value = data.settings.minSpread;
+                        tMinProfit.value = data.settings.minProfit;
+                        tAmountUsdt.value = data.settings.amountUsdt;
+                        tIntervalSec.value = data.settings.intervalSec;
+                        tDryRun.value = data.settings.dryRun ? 'true' : 'false';
+                    }
+                } else {
+                    saveFeedback.className = 'save-feedback error';
+                    saveFeedback.textContent = '❌ Ошибка: ' + (data.error || 'неизвестная');
+                    setTimeout(() => { saveFeedback.className = 'save-feedback'; saveFeedback.textContent = ''; }, 4000);
+                }
+            } catch (e) {
+                saveFeedback.className = 'save-feedback error';
+                saveFeedback.textContent = '❌ Ошибка: ' + e.message;
+                setTimeout(() => { saveFeedback.className = 'save-feedback'; saveFeedback.textContent = ''; }, 4000);
             }
         }
 
         async function startTrading() {
             try {
+                // Сначала сохраним настройки
+                await saveSettings();
                 const res = await fetch(`${API_URL}/api/trading/start`, { method: 'POST' });
                 const data = await res.json();
                 if (data.success) {
