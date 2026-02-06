@@ -480,7 +480,7 @@
                     const isSell = ex.id === o.sellExchange;
                     const cls = isBuy ? 'ex-row buy-row' : (isSell ? 'ex-row sell-row' : 'ex-row');
                     const tag = isBuy ? '<span class="ex-tag">ПОКУПКА</span>' : (isSell ? '<span class="ex-tag">ПРОДАЖА</span>' : '');
-                    exHtml += `<div class="${cls}"><span class="ex-name">${ex.name} ${tag}</span><span class="ex-prices">Ask ${fmtPrice(ex.ask)} / Bid ${fmtPrice(ex.bid)}</span></div>`;
+                    exHtml += `<div class="${cls}"><span class="ex-name">${ex.name} ${tag}</span><span class="ex-prices">Купить ${fmtPrice(ex.ask)} / Продать ${fmtPrice(ex.bid)}</span></div>`;
                 }
 
                 let profitGridHtml = '';
