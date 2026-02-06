@@ -190,6 +190,41 @@
         .card-toggle { cursor: pointer; }
         .card-details { display: none; }
         .card-details.open { display: block; }
+
+        /* Trading panel */
+        .trading-panel {
+            background: linear-gradient(145deg, rgba(18,25,42,0.95), rgba(30,27,75,0.5));
+            border-radius: 14px; padding: 16px; margin-bottom: 12px;
+            border: 1px solid rgba(168,85,247,0.3);
+        }
+        .trading-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+        .trading-title { font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+        .trading-status-badge {
+            font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 6px;
+        }
+        .trading-status-badge.running { background: rgba(34,197,94,0.2); color: var(--green); }
+        .trading-status-badge.stopped { background: rgba(239,68,68,0.15); color: var(--red); }
+        .trading-status-badge.dry { background: rgba(245,158,11,0.2); color: var(--yellow); }
+        .trading-info { font-size: 12px; color: var(--hint); margin-bottom: 10px; line-height: 1.5; }
+        .trading-info strong { color: var(--text); }
+        .trading-btns { display: flex; gap: 8px; margin-bottom: 10px; }
+        .btn-trade-start { background: var(--green); color: white; }
+        .btn-trade-stop { background: var(--red); color: white; }
+
+        /* Trade history */
+        .trade-log { max-height: 250px; overflow-y: auto; }
+        .trade-item {
+            padding: 8px 10px; margin-bottom: 6px; border-radius: 8px;
+            background: rgba(255,255,255,0.03); font-size: 12px;
+            border-left: 3px solid var(--purple);
+        }
+        .trade-item.success { border-left-color: var(--green); }
+        .trade-item.fail { border-left-color: var(--red); }
+        .trade-item .trade-time { color: var(--hint); font-size: 10px; }
+        .trade-item .trade-detail { margin-top: 3px; }
+        .trade-item .trade-profit { font-weight: 600; }
+        .trade-item .trade-profit.green { color: var(--green); }
+        .trade-item .trade-profit.red { color: var(--red); }
     </style>
 </head>
 <body>
@@ -215,6 +250,21 @@
         <div class="btn-row">
             <button class="btn btn-primary" id="refreshBtn">🔄 Обновить</button>
             <button class="btn btn-secondary" id="toggleSettings">⚙️ Настройки</button>
+        </div>
+
+        <div class="trading-panel" id="tradingPanel">
+            <div class="trading-header">
+                <div class="trading-title">🤖 Автоторговля</div>
+                <span class="trading-status-badge stopped" id="tradingBadge">Остановлена</span>
+            </div>
+            <div class="trading-info" id="tradingInfo">
+                Загрузка статуса...
+            </div>
+            <div class="trading-btns">
+                <button class="btn btn-trade-start" id="startTradingBtn" onclick="startTrading()">▶ Запустить</button>
+                <button class="btn btn-trade-stop" id="stopTradingBtn" onclick="stopTrading()" disabled>⏹ Остановить</button>
+            </div>
+            <div id="tradeLog"></div>
         </div>
 
         <div id="content">
@@ -447,8 +497,98 @@
         minSpreadInput.addEventListener('input', onSettingsChange);
         minProfitInput.addEventListener('input', onSettingsChange);
 
+        // === AUTO-TRADING ===
+        const tradingBadge = document.getElementById('tradingBadge');
+        const tradingInfo = document.getElementById('tradingInfo');
+        const startTradingBtn = document.getElementById('startTradingBtn');
+        const stopTradingBtn = document.getElementById('stopTradingBtn');
+        const tradeLog = document.getElementById('tradeLog');
+
+        async function fetchTradingStatus() {
+            try {
+                const res = await fetch(`${API_URL}/api/trading/status`);
+                const data = await res.json();
+                if (!data.success) return;
+
+                const s = data.settings;
+                const running = data.running;
+                const dry = data.dryRun;
+                const keys = data.configuredExchanges || [];
+
+                tradingBadge.className = 'trading-status-badge ' + (running ? (dry ? 'dry' : 'running') : 'stopped');
+                tradingBadge.textContent = running ? (dry ? 'DRY RUN' : 'Активна') : 'Остановлена';
+
+                startTradingBtn.disabled = running;
+                stopTradingBtn.disabled = !running;
+
+                tradingInfo.innerHTML = `
+                    <div>Мин. спред: <strong>${s.minSpread}%</strong> · Мин. прибыль: <strong>${s.minProfit} USDT</strong> · Сумма: <strong>${s.amountUsdt} USDT</strong></div>
+                    <div>Интервал: <strong>${s.intervalSec}с</strong> · Режим: <strong>${dry ? '🧪 DRY RUN (без реальных сделок)' : '⚡ LIVE'}</strong></div>
+                    <div>API ключи: <strong>${keys.length > 0 ? keys.join(', ') : 'не настроены'}</strong></div>
+                `;
+
+                // Render trade history
+                const trades = data.trades || [];
+                if (trades.length === 0) {
+                    tradeLog.innerHTML = '<div style="font-size:11px;color:var(--hint);text-align:center;padding:8px;">Нет сделок</div>';
+                } else {
+                    let html = '<div style="font-size:11px;color:var(--hint);margin-bottom:6px;">Последние сделки:</div><div class="trade-log">';
+                    for (const t of trades) {
+                        const time = new Date(t.timestamp * 1000).toLocaleTimeString('ru-RU');
+                        const isOk = t.buyOrderStatus !== 'failed' && t.sellOrderStatus !== 'failed';
+                        const cls = t.dryRun ? '' : (isOk ? 'success' : 'fail');
+                        const profitCls = t.expectedProfit >= 0 ? 'green' : 'red';
+                        const sign = t.expectedProfit >= 0 ? '+' : '';
+                        const mode = t.dryRun ? '🧪' : (isOk ? '✅' : '❌');
+                        html += `
+                            <div class="trade-item ${cls}">
+                                <div class="trade-time">${mode} ${time}</div>
+                                <div class="trade-detail">
+                                    ${t.symbolKey} · Buy <strong>${t.buyExchangeName}</strong> → Sell <strong>${t.sellExchangeName}</strong>
+                                    · Spread ${fmt(t.spreadPercent,2)}%
+                                    · <span class="trade-profit ${profitCls}">${sign}${fmt(t.expectedProfit,4)} USDT</span>
+                                </div>
+                                ${t.error ? `<div style="color:var(--red);font-size:10px;margin-top:2px;">${t.error}</div>` : ''}
+                            </div>`;
+                    }
+                    html += '</div>';
+                    tradeLog.innerHTML = html;
+                }
+            } catch (e) {
+                tradingInfo.textContent = 'Ошибка загрузки статуса';
+            }
+        }
+
+        async function startTrading() {
+            try {
+                const res = await fetch(`${API_URL}/api/trading/start`, { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    setTimeout(fetchTradingStatus, 500);
+                } else {
+                    alert(data.error || 'Ошибка');
+                }
+            } catch (e) { alert('Ошибка: ' + e.message); }
+        }
+
+        async function stopTrading() {
+            try {
+                const res = await fetch(`${API_URL}/api/trading/stop`, { method: 'POST' });
+                const data = await res.json();
+                if (data.success) {
+                    setTimeout(fetchTradingStatus, 500);
+                } else {
+                    alert(data.error || 'Ошибка');
+                }
+            } catch (e) { alert('Ошибка: ' + e.message); }
+        }
+
+        // Обновляем статус торговли каждые 5с
+        setInterval(fetchTradingStatus, 5000);
+
         console.log('🤖 Arbitrage Bot v3.0 started');
         fetchArbitrage();
+        fetchTradingStatus();
         startAutoUpdate();
     </script>
 </body>
